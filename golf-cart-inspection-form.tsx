@@ -253,74 +253,102 @@ export default function GolfCartInspectionForm() {
     try {
       console.log("Submitting records:", filteredRecords)
 
-      // Submit all records sequentially with error details
-      const responses = []
-      for (const record of filteredRecords) {
-        try {
-          console.log("Attempting to submit record:", record)
-
-          const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ fields: record }),
-          })
-
-          const responseData = await response.json()
-
-          if (!response.ok) {
-            console.error("Failed to submit record:", {
-              record,
-              status: response.status,
-              errorType: responseData.error?.type,
-              errorMessage: responseData.error?.message,
-              fullErrorResponse: responseData
-            })
-            
-            // Show detailed error to user
-            alert(`Error al guardar registro: ${responseData.error?.message || 'Error desconocido'}`)
-          }
-
-          responses.push(response)
-        } catch (recordError) {
-          console.error("Error submitting individual record:", {
-            record,
-            error: recordError
-          })
-          
-          // Show error to user
-          alert(`Error de red al guardar registro: ${recordError.message}`)
-        }
-      }
-
-      // Check if all submissions were successful
-      const allSuccessful = responses.every(response => response.ok)
-
-      if (allSuccessful) {
-        console.log("All records submitted successfully to Airtable")
-        
-        // Generate PDF
-        await generatePDF()
-
-        // Reset form after successful submission
-        form.reset()
-        setInspectionData({
-          frontLeftSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
-          frontRightSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
+      // Enviar a la API de Next.js
+      const apiResponse = await fetch('/api/submit-form', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          property: data.property,
+          cartNumber: cartNumber,
+          guestName: data.guestName,
+          guestEmail: data.guestEmail,
+          guestPhone: data.guestPhone,
+          observations: data.observations,
+          signatureChecked: data.signatureChecked,
+          frontLeftSide: {
+            scratches: sanitizeQuantity(data.frontLeftScratchesQuantity),
+            missingParts: sanitizeQuantity(data.frontLeftMissingPartsQuantity),
+            damageBumps: sanitizeQuantity(data.frontLeftDamageBumpsQuantity)
+          },
+          frontRightSide: {
+            scratches: sanitizeQuantity(data.frontRightScratchesQuantity),
+            missingParts: sanitizeQuantity(data.frontRightMissingPartsQuantity),
+            damageBumps: sanitizeQuantity(data.frontRightDamageBumpsQuantity)
+          },
+          inspectionId: inspectionId,
+          inspectionDate: formattedDate
         })
-        if (signaturePad) {
-          signaturePad.clear()
-        }
-        // Optional: Show success message to user
-        alert("Inspección guardada exitosamente")
-      } else {
-        console.error("Failed to submit some records to Airtable")
-        alert("Error al guardar algunos registros de la inspección")
+      });
+
+      console.log('API Response Status:', apiResponse.status);
+      console.log('API Response Headers:', Object.fromEntries(apiResponse.headers.entries()));
+
+      // Verificar si la respuesta es JSON
+      const contentType = apiResponse.headers.get('content-type');
+      console.log('Content-Type:', contentType);
+
+      if (!contentType || !contentType.includes('application/json')) {
+        // Intentar obtener el texto de la respuesta para depuración
+        const responseText = await apiResponse.text();
+        console.error('Respuesta no JSON. Contenido:', responseText);
+        throw new Error(`Respuesta no es JSON válido. Contenido: ${responseText}`);
       }
-    } catch (error) {
-      console.error("Error submitting to Airtable:", error)
+
+      const apiResponseData = await apiResponse.json();
+
+      console.log('API Response Data:', apiResponseData);
+
+      if (!apiResponseData.success) {
+        console.error("API submission failed:", {
+          status: apiResponse.status,
+          error: apiResponseData
+        });
+        
+        alert(`Error al guardar la inspección: ${apiResponseData.message || 'Error desconocido'}`)
+        return;
+      }
+
+      console.log("Inspection submitted successfully:", apiResponseData);
+      
+      // Verificar resultados de Airtable
+      if (!apiResponseData.airtableResults.success) {
+        console.warn("Algunos registros de Airtable no se guardaron completamente");
+        alert("Algunos registros no se guardaron correctamente en Airtable");
+      }
+
+      // Verificar resultado de correo
+      if (!apiResponseData.emailResult.success) {
+        console.warn("No se pudo enviar el correo de confirmación");
+        alert("No se pudo enviar el correo de confirmación. Por favor, verifique su dirección de correo.");
+      }
+
+      // Generar PDF
+      await generatePDF()
+
+      // Resetear formulario
+      form.reset()
+      setInspectionData({
+        frontLeftSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
+        frontRightSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
+      })
+      if (signaturePad) {
+        signaturePad.clear()
+      }
+
+      // Mostrar mensaje de éxito
+      alert(`Inspección guardada exitosamente. Vista previa: ${apiResponseData.previewLink}`)
+
+    } catch (error: unknown) {
+      console.error("Error submitting to API:", error)
+      if (error instanceof Error) {
+        console.error("Error details:", {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
       alert(`Error de red: No se pudo guardar la inspección`)
     }
   }
@@ -401,7 +429,12 @@ export default function GolfCartInspectionForm() {
                         </FormControl>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
+                        <Calendar 
+                          mode="single" 
+                          selected={field.value || undefined} 
+                          onSelect={field.onChange} 
+                          initialFocus 
+                        />
                       </PopoverContent>
                     </Popover>
                   </FormItem>
@@ -479,13 +512,15 @@ export default function GolfCartInspectionForm() {
                               className="appearance-none"
                               {...field}
                               onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontLeftSide', 
-                                  'scratches', 
-                                  Number(value)
-                                )
+                                const value = Number(e.target.value);
+                                field.onChange(value);
+                                setInspectionData(prev => ({
+                                  ...prev,
+                                  frontLeftSide: {
+                                    ...prev.frontLeftSide,
+                                    scratches: value
+                                  }
+                                }));
                               }}
                             />
                           </FormControl>

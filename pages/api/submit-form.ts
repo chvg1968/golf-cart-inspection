@@ -1,44 +1,51 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import nodemailer from 'nodemailer';
-import PDFDocument from 'pdfkit';
+import { Resend } from 'resend';
+import { v4 as uuidv4 } from 'uuid';
+import * as ResendImport from 'resend';
 import { createWriteStream } from 'fs';
 import path from 'path';
+import PDFDocument from 'pdfkit';
 import AirtableLib from 'airtable';
-import { v4 as uuidv4 } from 'uuid';
 
-// Types
+// Tipos para Resend
+interface ResendMailData {
+  from: string;
+  to: string[];
+  subject: string;
+  html: string;
+}
+
+interface SendEmailOptions {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}
+
+// Tipos
 type DamageRecord = {
   Section: string;
   'Damage Type': string;
   Quantity: number;
 };
 
-// Environment validation
-const requiredEnvVars = [
+// Configuración de variables de entorno
+const REQUIRED_ENV_VARS = [
+  'RESEND_API_KEY',
   'AIRTABLE_API_KEY',
   'AIRTABLE_BASE_ID',
   'AIRTABLE_TABLE_NAME',
-  'EMAIL_USER',
-  'EMAIL_PASS',
   'NEXT_PUBLIC_APP_URL'
 ] as const;
 
-requiredEnvVars.forEach(varName => {
+// Verificar variables de entorno
+REQUIRED_ENV_VARS.forEach(varName => {
   if (!process.env[varName]) {
-    throw new Error(`${varName} is not set`);
+    throw new Error(`Missing required environment variable: ${varName}`);
   }
 });
 
-// Services setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: { rejectUnauthorized: true }
-});
-
+// Configuración de Airtable
 const airtable = new AirtableLib({ apiKey: process.env.AIRTABLE_API_KEY });
 const base = airtable.base(process.env.AIRTABLE_BASE_ID!);
 const table = base(process.env.AIRTABLE_TABLE_NAME!);
@@ -115,13 +122,111 @@ const generatePDF = async (data: any): Promise<string> => {
   });
 };
 
-// API Handler
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
+function generatePreviewHTML(data: any, previewLink: string) {
+  return `
+    <html>
+      <body>
+        <h1>Golf Cart Inspection Preview</h1>
+        <p>Hello ${data.guestName},</p>
+        <p>An inspection has been recorded for Golf Cart #${data.cartNumber} at ${data.property}.</p>
+        <p>Please review and sign the inspection report at:</p>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/signature/${data.inspectionId}">View Inspection Report</a>
+        <p>Inspection Details:</p>
+        <ul>
+          <li>Date: ${data.inspectionDate}</li>
+          <li>Cart Number: ${data.cartNumber}</li>
+          <li>Property: ${data.property}</li>
+        </ul>
+        <p>Thank you,<br>Golf Cart Inspection Team</p>
+      </body>
+    </html>
+  `;
+}
 
-  let mainRecord: any = null;
+const resend = new Resend(process.env.RESEND_API_KEY || '');
+
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || '';
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY || '';
+const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || '';
+
+function logWithDiagnostics(message: string, data: any, level: 'info' | 'error' = 'info') {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    message,
+    data: data ? JSON.stringify(data) : null
+  };
+
+  console[level](JSON.stringify(logEntry));
+}
+
+function diagnoseNextApiRequest(req: NextApiRequest) {
+  logWithDiagnostics('📋 API Request Diagnostics', {
+    method: req.method,
+    headers: req.headers,
+    body: req.body
+  });
+}
+
+async function sendEmailWithDiagnostics(emailData: SendEmailOptions) {
+  logWithDiagnostics('📧 Sending Email', {
+    to: emailData.to,
+    subject: emailData.subject
+  });
+
+  try {
+    const { data, error } = await resend.emails.send(emailData);
+
+    if (error) {
+      logWithDiagnostics('❌ Email Sending Failed', error, 'error');
+      throw error;
+    }
+
+    logWithDiagnostics('✅ Email Sent Successfully', data);
+    return data;
+  } catch (error) {
+    console.error('Resend Email Error:', error);
+    throw error;
+  }
+}
+
+// Función para generar un ID de inspección consistente y seguro para URL
+function generateInspectionId(data: any): string {
+  // Usar una combinación de datos para crear un ID único pero legible
+  const baseId = `${data.property}-${data.cartNumber}-${data.inspectionDate}`;
+  
+  // Reemplazar espacios y caracteres especiales
+  const safeId = baseId
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')  // Reemplazar caracteres no alfanuméricos con guiones
+    .replace(/-+/g, '-')  // Reemplazar múltiples guiones con uno solo
+    .replace(/^-|-$/g, '');  // Eliminar guiones al inicio y final
+
+  // Agregar un fragmento aleatorio para mayor unicidad
+  const randomFragment = Math.random().toString(36).substring(2, 8);
+  
+  return `${safeId}-${randomFragment}`;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Diagnóstico de la solicitud
+  console.error('🔍 Solicitud recibida:', {
+    method: req.method,
+    body: JSON.stringify(req.body),
+    headers: req.headers
+  });
+
+  diagnoseNextApiRequest(req);
+
+  if (req.method !== 'POST') {
+    console.error('❌ Método no permitido');
+    logWithDiagnostics('❌ MÉTODO NO PERMITIDO', null, 'error');
+    return res.status(405).json({ 
+      success: false,
+      message: 'Method not allowed',
+      error: 'Solo se permiten solicitudes POST'
+    });
+  }
 
   try {
     const {
@@ -129,154 +234,198 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       cartNumber,
       guestName,
       guestEmail,
-      guestPhone,
-      frontLeftSide,
-      frontRightSide,
-      observations,
-      termsAccepted,
-      clientSignature,
-      isClientView
+      guestPhone = '',
+      observations = '',
+      signatureChecked = false,
+      frontLeftSide = { scratches: 0, missingParts: 0, damageBumps: 0 },
+      frontRightSide = { scratches: 0, missingParts: 0, damageBumps: 0 },
+      inspectionDate
     } = req.body;
 
-    // Initial validation
-    if (!property || !cartNumber || !guestName || !guestEmail) {
-      return res.status(400).json({
-        message: 'Missing required fields',
-        errors: ['property', 'cartNumber', 'guestName', 'guestEmail']
-          .filter(field => !req.body[field])
-          .map(field => `${field} is required`)
+    console.error('📋 Datos procesados:', {
+      property,
+      cartNumber,
+      guestName,
+      guestEmail,
+      inspectionDate
+    });
+
+    // Generar ID de inspección
+    const inspectionId = generateInspectionId(req.body);
+
+    // Validar datos de entrada
+    if (!guestEmail) {
+      console.error('❌ No se proporcionó correo electrónico');
+      logWithDiagnostics('❌ ERROR: No se proporcionó un correo electrónico', null, 'error');
+      return res.status(400).json({ 
+        success: false,
+        message: 'Correo electrónico es requerido',
+        datosRecibidos: req.body
       });
     }
 
-    // Handle initial inspection submission
-    if (!isClientView) {
-      const signatureToken = uuidv4();
-      const inspectionDate = new Date().toISOString().split('T')[0];
+    // Configurar cabeceras para JSON
+    res.setHeader('Content-Type', 'application/json');
 
-      // Create main record
-      mainRecord = await table.create([{
-        fields: {
-          'Property': property,
-          'Golf Cart Number': cartNumber,
-          'Inspection Date': inspectionDate,
-          'Guest Name': guestName,
-          'Guest Email': guestEmail,
-          'Guest Phone': guestPhone || '',
-          'Signature Checked': false,
-          'Inspection ID': signatureToken
-        }
-      }]);
-
-      // Create damage records
-      const damageRecords = [
-        ...createDamageRecords('Front Left', frontLeftSide),
-        ...createDamageRecords('Front Right', frontRightSide)
-      ];
-
-      if (damageRecords.length > 0) {
-        await Promise.all(damageRecords.map(record => 
-          table.create([{
-            fields: {
-              ...record,
-              'Inspection ID': signatureToken
-            }
-          }])
-        ));
+    // Preparar registros para Airtable
+    const airtableRecords = [
+      // Front Left Scratches
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Left",
+        "Damage Type": "Scratches",
+        Quantity: frontLeftSide.scratches,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
+      },
+      // Front Right Scratches
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Right",
+        "Damage Type": "Scratches",
+        Quantity: frontRightSide.scratches,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
+      },
+      // Front Left Missing Parts
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Left",
+        "Damage Type": "Missing Parts",
+        Quantity: frontLeftSide.missingParts,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
+      },
+      // Front Right Missing Parts
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Right",
+        "Damage Type": "Missing Parts",
+        Quantity: frontRightSide.missingParts,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
+      },
+      // Front Left Damage/Bumps
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Left",
+        "Damage Type": "Damage/Bumps",
+        Quantity: frontLeftSide.damageBumps,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
+      },
+      // Front Right Damage/Bumps
+      {
+        "Inspection ID": inspectionId,
+        Property: property || "No Property Specified",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": inspectionDate,
+        "Guest Name": guestName,
+        "Guest Email": guestEmail,
+        "Guest Phone": guestPhone,
+        Section: "Front Right",
+        "Damage Type": "Damage/Bumps",
+        Quantity: frontRightSide.damageBumps,
+        "Preview observations by Guest": observations,
+        "Signature Checked": signatureChecked
       }
+    ].filter(record => record.Quantity > 0);
 
-      // Send email to client
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: guestEmail,
-        subject: 'Golf Cart Inspection - Signature Required',
-        html: `
-          <h1>Golf Cart Inspection</h1>
-          <p>Please review and complete the inspection form by clicking the link below:</p>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL}/signature/${signatureToken}">
-            Complete Inspection
-          </a>
-        `
-      });
+    // Enviar registros a Airtable
+    const airtableSubmissionPromises = airtableRecords.map(record => 
+      fetch(`https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields: record }),
+      })
+    );
 
-      return res.status(200).json({
-        message: 'Initial inspection saved',
-        signatureToken
-      });
+    const airtableResponses = await Promise.all(airtableSubmissionPromises);
+    const airtableResults = await Promise.all(airtableResponses.map(r => r.json()));
+
+    // Verificar si todos los registros se enviaron correctamente
+    const allAirtableSubmissionsSuccessful = airtableResults.every(result => !result.error);
+
+    if (!allAirtableSubmissionsSuccessful) {
+      logWithDiagnostics('❌ ERROR: No todos los registros se guardaron en Airtable', airtableResults, 'error');
     }
 
-    // Handle client completion
-    else {
-      if (!termsAccepted || !clientSignature) {
-        return res.status(400).json({
-          message: 'Terms acceptance and signature are required',
-          errors: [
-            !termsAccepted && 'Terms must be accepted',
-            !clientSignature && 'Signature is required'
-          ].filter(Boolean)
-        });
-      }
+    // Generar enlace de vista previa
+    const previewLink = `${process.env.NEXT_PUBLIC_APP_URL}/signature/${inspectionId}`;
 
-      // Generate PDF
-      const pdfPath = await generatePDF({
-        property,
-        cartNumber,
-        guestName,
-        guestEmail,
-        guestPhone,
-        frontLeftSide,
-        frontRightSide,
-        observations,
-        clientSignature
-      });
+    // Preparar correo electrónico
+    const emailData = {
+      from: 'Golf Cart Inspection <onboarding@resend.dev>',
+      to: guestEmail,
+      subject: 'Golf Cart Inspection - Preview and Signature Required',
+      html: generatePreviewHTML(req.body, previewLink)
+    };
 
-      // Update Airtable record
-      if (!mainRecord) {
-        // If mainRecord is not available, try to find the record by inspection details
-        const existingRecords = await table.select({
-          filterByFormula: `AND(
-            {Guest Name} = '${guestName}', 
-            {Guest Email} = '${guestEmail}', 
-            {Golf Cart Number} = '${cartNumber}'
-          )`
-        }).firstPage();
-
-        if (existingRecords.length > 0) {
-          mainRecord = existingRecords[0];
-        } else {
-          throw new Error('No matching inspection record found');
-        }
-      }
-
-      await table.update([{
-        id: mainRecord.id,
-        fields: {
-          'Signature Checked': true,
-          'Preview observations by Guest': observations || '',
-          'PDF Path': pdfPath
-        }
-      }]);
-
-      // Send final email with PDF
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: guestEmail,
-        subject: 'Golf Cart Inspection - Completed',
-        text: `Hello ${guestName}, attached is your completed inspection form.`,
-        attachments: [{
-          filename: 'inspection.pdf',
-          path: pdfPath
-        }]
-      });
-
-      return res.status(200).json({
-        message: 'Inspection completed successfully'
-      });
+    // Intentar enviar correo
+    let emailResult = null;
+    try {
+      emailResult = await sendEmailWithDiagnostics(emailData);
+    } catch (emailError) {
+      logWithDiagnostics('❌ ERROR AL ENVIAR CORREO', emailError, 'error');
+      // No interrumpir el proceso si falla el correo
     }
+
+    // Respuesta final
+    const responseData = { 
+      success: true,
+      message: 'Inspección guardada exitosamente',
+      airtableResults: {
+        success: allAirtableSubmissionsSuccessful,
+        details: allAirtableSubmissionsSuccessful ? 'Todos los registros guardados' : 'Algunos registros fallaron'
+      },
+      emailResult: emailResult ? { success: true } : { success: false },
+      previewLink: previewLink
+    };
+
+    console.error('✅ Respuesta JSON:', JSON.stringify(responseData));
+    return res.status(200).json(responseData);
+
   } catch (error) {
-    console.error('Error processing inspection:', error);
-    return res.status(500).json({
-      message: 'Error processing inspection',
-      error: error instanceof Error ? error.message : 'Unknown error'
+    console.error('❌ Error completo:', error);
+    logWithDiagnostics('❌ ERROR PROCESANDO LA INSPECCIÓN', error, 'error');
+    return res.status(500).json({ 
+      success: false,
+      message: 'Error procesando la inspección',
+      error: error instanceof Error ? error.message : 'Error desconocido',
+      fullError: error instanceof Error ? error.stack : null
     });
   }
 }

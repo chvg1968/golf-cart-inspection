@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:netlify": "netlify dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "export": "next export",
+    "netlify:build": "npm run build && netlify build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -41,7 +44,6 @@
     "@types/prop-types": "latest",
     "@types/react": "latest",
     "@types/signature_pad": "^2.3.6",
-    "airtable": "^0.12.2",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -52,6 +54,7 @@
     "input-otp": "1.4.1",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.454.0",
+    "netlify-cli": "^17.10.1",
     "next": "14.2.16",
     "next-themes": "^0.4.4",
     "pdfkit": "^0.16.0",
@@ -73,10 +76,15 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.26.9",
+    "@babel/preset-env": "^7.26.9",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/react-signature-canvas": "^1.0.7",
+    "airtable": "^0.12.2",
+    "babel-loader": "^9.2.1",
+    "babel-plugin-module-resolver": "^5.0.2",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"

@@ -1,0 +1,19 @@
+[build]
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = ".next"
+
+[[redirects]]
+  from = "/api/get-inspection/*"
+  to = "/.netlify/functions/get-inspection"
+  status = 200
+
+[[headers]]
+  for = "/signature/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[context.production.environment]
+  AIRTABLE_API_KEY = "${AIRTABLE_API_KEY}"
+  AIRTABLE_BASE_ID = "${AIRTABLE_BASE_ID}"
+  AIRTABLE_TABLE_NAME = "${AIRTABLE_TABLE_NAME}"

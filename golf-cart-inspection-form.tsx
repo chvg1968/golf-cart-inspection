@@ -1,6 +1,6 @@
 "use client"
 
-import Image from "next/image"
+import Image from "next/legacy/image"
 import { CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
 import { useState, useRef } from "react"
@@ -369,8 +369,10 @@ export default function GolfCartInspectionForm() {
               <Image
                 src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Golf%20Cart%20Damage%20Inspection%20Check%20list%20Four%20Seater%20edited-qJbaES9ueamIzo64B8vaA7Ln65pMiZ.png"
                 alt="Golf Cart Inspection Diagram"
-                fill
-                className="object-contain"
+                layout="fill"
+                objectFit="contain"
+                unoptimized
+                quality={100}
               />
             </div>
 

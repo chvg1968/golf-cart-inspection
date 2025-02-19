@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/legacy/image"
-import { CalendarIcon } from "lucide-react"
+import { CalendarIcon, PlusIcon, TrashIcon } from "lucide-react"
 import { format } from "date-fns"
 import { useState, useRef } from "react"
 import SignatureCanvas from "react-signature-canvas"
@@ -27,17 +27,6 @@ const AIRTABLE_BASE_ID = "appNuegQuklxOYfDE"
 const AIRTABLE_TABLE_NAME = "GolfCart"
 
 // Tipos para la estructura de datos de inspección
-type InspectionSection = {
-  scratches: number;
-  missingParts: number;
-  damageBumps: number;
-}
-
-type InspectionData = {
-  frontLeftSide: InspectionSection;
-  frontRightSide: InspectionSection;
-}
-
 type FormData = {
   property: string;
   cartNumber: string;
@@ -47,20 +36,15 @@ type FormData = {
   guestPhone: string;
   observations: string;
   signatureChecked: boolean;
-  frontLeftScratchesQuantity: number;
-  frontLeftMissingPartsQuantity: number;
-  frontLeftDamageBumpsQuantity: number;
-  frontRightScratchesQuantity: number;
-  frontRightMissingPartsQuantity: number;
-  frontRightDamageBumpsQuantity: number;
 }
 
 export default function GolfCartInspectionForm() {
   const [signaturePad, setSignaturePad] = useState<any>(null)
-  const [inspectionData, setInspectionData] = useState<InspectionData>({
-    frontLeftSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
-    frontRightSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
-  })
+  const [damageRecords, setDamageRecords] = useState<{
+    section: string;
+    damageType: string;
+    quantity: number;
+  }[]>([])
   const formRef = useRef<HTMLFormElement>(null)
 
   const form = useForm<FormData>({
@@ -73,70 +57,140 @@ export default function GolfCartInspectionForm() {
       guestPhone: "",
       observations: "",
       signatureChecked: false,
-      frontLeftScratchesQuantity: 0,
-      frontLeftMissingPartsQuantity: 0,
-      frontLeftDamageBumpsQuantity: 0,
-      frontRightScratchesQuantity: 0,
-      frontRightMissingPartsQuantity: 0,
-      frontRightDamageBumpsQuantity: 0,
     }
   })
 
-  // Función para generar PDF
-  const generatePDF = async () => {
-    if (!formRef.current) return
+  // Function to add a new damage record
+  const addDamageRecord = () => {
+    setDamageRecords([
+      ...damageRecords, 
+      { section: "", damageType: "", quantity: 0 }
+    ])
+  }
 
+  // Function to remove a damage record
+  const removeDamageRecord = (indexToRemove: number) => {
+    setDamageRecords(damageRecords.filter((_, index) => index !== indexToRemove))
+  }
+
+  // Función para generar PDF
+  const generatePDF = async (data: FormData, damageRecords: {section: string, damageType: string, quantity: number}[]) => {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4'
     })
 
-    // Capturar todo el formulario
-    const canvas = await html2canvas(formRef.current, {
-      scale: 2,  // Aumentar resolución
-      useCORS: true  // Manejar imágenes de diferentes orígenes
-    })
-    const imgData = canvas.toDataURL('image/png')
-
-    // Obtener dimensiones del PDF
+    // Configuraciones de estilo
     const pageWidth = doc.internal.pageSize.getWidth()
-    const pageHeight = doc.internal.pageSize.getHeight()
+    const margin = 10
+    let currentY = margin
 
-    // Calcular dimensiones de la imagen
-    const imgWidth = pageWidth - 20  // Márgenes
-    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    // Título del documento
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Golf Cart Inspection Report', pageWidth / 2, currentY, { align: 'center' })
+    currentY += 15
 
-    // Centrar la imagen
-    const x = (pageWidth - imgWidth) / 2
-    const y = 10  // Pequeño margen superior
+    // Información del huésped
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Nombre: ${data.guestName}`, margin, currentY)
+    currentY += 7
+    doc.text(`Correo Electrónico: ${data.guestEmail}`, margin, currentY)
+    currentY += 7
+    doc.text(`Teléfono: ${data.guestPhone}`, margin, currentY)
+    currentY += 7
+    doc.text(`Propiedad: ${data.property}`, margin, currentY)
+    currentY += 7
+    doc.text(`Número de Carro: ${data.cartNumber}`, margin, currentY)
+    currentY += 7
+    
+    // Fecha de inspección
+    const inspectionDate = data.date ? format(data.date, 'dd/MM/yyyy') : format(new Date(), 'dd/MM/yyyy')
+    doc.text(`Fecha de Inspección: ${inspectionDate}`, margin, currentY)
+    currentY += 10
 
-    // Añadir imagen
-    doc.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight)
+    // Registros de daños
+    if (damageRecords.length > 0) {
+      doc.setFont('helvetica', 'bold')
+      doc.text('Registros de Daños:', margin, currentY)
+      currentY += 7
+      
+      doc.setFont('helvetica', 'normal')
+      damageRecords.forEach((record, index) => {
+        doc.text(`${index + 1}. Sección: ${record.section}`, margin, currentY)
+        currentY += 5
+        doc.text(`   Tipo de Daño: ${record.damageType}`, margin, currentY)
+        currentY += 5
+        doc.text(`   Cantidad: ${record.quantity}`, margin, currentY)
+        currentY += 7
+      })
+    }
 
-    // Añadir título
-    doc.setFontSize(16)
-    doc.text('Golf Cart Inspection Report', pageWidth / 2, 10, { align: 'center' })
+    // Observaciones
+    if (data.observations) {
+      doc.setFont('helvetica', 'bold')
+      doc.text('Observaciones:', margin, currentY)
+      currentY += 7
+      
+      doc.setFont('helvetica', 'normal')
+      // Dividir observaciones largas en múltiples líneas
+      const observationLines = doc.splitTextToSize(data.observations, pageWidth - 2 * margin)
+      doc.text(observationLines, margin, currentY)
+      currentY += (observationLines.length * 5)
+    }
 
-    // Guardar PDF
-    doc.save(`golf-cart-inspection-${Date.now()}.pdf`)
-  }
+    // Sección de Firma con más detalles
+    currentY += 15
+    doc.setFont('helvetica', 'bold')
+    doc.text('Firma del Huésped', margin, currentY)
+    currentY += 7
 
-  const handleInspectionDataChange = (
-    section: keyof InspectionData, 
-    issue: keyof InspectionSection, 
-    value: string
-  ) => {
-    setInspectionData((prevData) => ({
-      ...prevData,
-      [section]: {
-        ...prevData[section],
-        [issue]: Number.parseInt(value) || 0,
-      },
-    }))
+    // Cuadro de firma con líneas de referencia
+    doc.setLineWidth(0.5)
+    doc.setDrawColor(200) // Color gris claro
+    
+    // Rectángulo para firma
+    const signatureBoxWidth = pageWidth - 2 * margin
+    const signatureBoxHeight = 40
+    doc.rect(margin, currentY, signatureBoxWidth, signatureBoxHeight)
+
+    // Líneas de firma
+    const lineSpacing = signatureBoxHeight / 4
+    for (let i = 1; i < 4; i++) {
+      doc.setDrawColor(230) // Color gris más claro
+      doc.line(margin, currentY + i * lineSpacing, margin + signatureBoxWidth, currentY + i * lineSpacing)
+    }
+
+    // Texto adicional
+    currentY += signatureBoxHeight + 5
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(100) // Gris oscuro
+    doc.text('Al firmar, confirmo que la inspección del carrito de golf es precisa y acepto los términos.', margin, currentY)
+
+    // Pie de página
+    doc.setFontSize(8)
+    doc.setTextColor(150) // Gris medio
+    doc.text(`Documento generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, margin, pageWidth - 10, { align: 'left' })
+
+    // Convertir PDF a Blob
+    return doc.output('blob')
   }
 
   const onSubmit = async (data: FormData) => {
+    // Validar campos requeridos
+    if (!data.guestName || !data.guestName.trim()) {
+      alert("Por favor, ingrese el nombre del huésped")
+      return
+    }
+
+    if (!data.guestEmail || !isValidEmail(data.guestEmail)) {
+      alert("Por favor, ingrese un correo electrónico válido")
+      return
+    }
+
     // Validate and convert Golf Cart Number
     const cartNumber = parseInt(data.cartNumber, 10)
     if (isNaN(cartNumber)) {
@@ -145,212 +199,98 @@ export default function GolfCartInspectionForm() {
     }
 
     // Format date for Airtable (YYYY-MM-DD format)
-    const formattedDate = data.date ? format(data.date, 'yyyy-MM-dd') : null
+    const formattedDate = data.date ? format(data.date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')
 
     // Generate a unique inspection ID
-    const inspectionId = `${data.property}-${cartNumber}-${formattedDate}-${Date.now()}`
-
-    // Función para sanitizar cantidad
-    const sanitizeQuantity = (value: number | string): number => {
-      const num = Number(value)
-      return isNaN(num) ? 0 : Math.max(0, Math.floor(num))
-    }
-
-    // Prepare multiple records for Airtable
-    const inspectionRecords = [
-      // Scratches records
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Left",
-        "Damage Type": "Scratches",
-        Quantity: sanitizeQuantity(data.frontLeftScratchesQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      },
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Right",
-        "Damage Type": "Scratches",
-        Quantity: sanitizeQuantity(data.frontRightScratchesQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      },
-      // Missing Parts records
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Left",
-        "Damage Type": "Missing Parts",
-        Quantity: sanitizeQuantity(data.frontLeftMissingPartsQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      },
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Right",
-        "Damage Type": "Missing Parts",
-        Quantity: sanitizeQuantity(data.frontRightMissingPartsQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      },
-      // Damage/Bumps records
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Left",
-        "Damage Type": "Damage/Bumps",
-        Quantity: sanitizeQuantity(data.frontLeftDamageBumpsQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      },
-      {
-        "Inspection ID": inspectionId,
-        Property: data.property || "No Property Specified",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName,
-        "Guest Email": data.guestEmail,
-        "Guest Phone": data.guestPhone,
-        Section: "Front Right",
-        "Damage Type": "Damage/Bumps",
-        Quantity: sanitizeQuantity(data.frontRightDamageBumpsQuantity),
-        "Preview observations by Guest": data.observations || "",
-        "Signature Checked": data.signatureChecked
-      }
-    ]
-
-    // Filter out records with zero quantity
-    const filteredRecords = inspectionRecords.filter(record => record.Quantity > 0)
+    const inspectionId = `cart${cartNumber}-${formattedDate}-${Date.now()}`
+      .replace(/[^a-zA-Z0-9-]/g, '') // Remove any invalid characters
+      .toLowerCase() // Ensure lowercase for URL safety
 
     try {
-      console.log("Submitting records:", filteredRecords)
+      // Generate PDF with all form details
+      const pdfBlob = await generatePDF(data, damageRecords)
 
-      // Enviar a la API de Next.js
+      // Prepare Airtable record data
+      const airtableRecord = {
+        "Inspection ID": inspectionId,
+        "Property": data.property || "Sin Especificar",
+        "Golf Cart Number": cartNumber,
+        "Inspection Date": formattedDate,
+        "Guest Name": data.guestName.trim(),
+        "Guest Email": data.guestEmail.trim().toLowerCase(),
+        "Guest Phone": (data.guestPhone || "").trim(),
+        "Golf Cart Inspection Send": true,
+        "Golf Cart Signature Checked": !!data.signatureChecked
+      }
+
+      // Convert PDF to base64 for transmission
+      const pdfBase64 = pdfBlob ? await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          try {
+            const base64data = (reader.result as string).split(',')[1]
+            resolve(base64data)
+          } catch (error) {
+            console.error("Error converting PDF to base64:", error)
+            reject(error)
+          }
+        }
+        reader.onerror = (error) => {
+          console.error("FileReader error:", error)
+          reject(error)
+        }
+        reader.readAsDataURL(pdfBlob)
+      }) : null
+
+      // Preparar datos de daños
+      const damageRecordsData = damageRecords.map(record => ({
+        section: record.section || "No especificado",
+        damageType: record.damageType || "No especificado",
+        quantity: record.quantity || 0
+      }))
+
+      // Submit to API (which will handle Airtable and email)
       const apiResponse = await fetch('/api/submit-form', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          property: data.property,
-          cartNumber: cartNumber,
-          guestName: data.guestName,
-          guestEmail: data.guestEmail,
-          guestPhone: data.guestPhone,
-          observations: data.observations,
-          signatureChecked: data.signatureChecked,
-          frontLeftSide: {
-            scratches: sanitizeQuantity(data.frontLeftScratchesQuantity),
-            missingParts: sanitizeQuantity(data.frontLeftMissingPartsQuantity),
-            damageBumps: sanitizeQuantity(data.frontLeftDamageBumpsQuantity)
-          },
-          frontRightSide: {
-            scratches: sanitizeQuantity(data.frontRightScratchesQuantity),
-            missingParts: sanitizeQuantity(data.frontRightMissingPartsQuantity),
-            damageBumps: sanitizeQuantity(data.frontRightDamageBumpsQuantity)
-          },
-          inspectionId: inspectionId,
-          inspectionDate: formattedDate
+          airtableRecord: airtableRecord,
+          pdfFile: pdfBase64,
+          damageRecords: damageRecordsData,
+          guestEmail: data.guestEmail.trim().toLowerCase() // Enviar correo explícitamente
         })
       });
 
-      console.log('API Response Status:', apiResponse.status);
-      console.log('API Response Headers:', Object.fromEntries(apiResponse.headers.entries()));
-
-      // Verificar si la respuesta es JSON
-      const contentType = apiResponse.headers.get('content-type');
-      console.log('Content-Type:', contentType);
-
-      if (!contentType || !contentType.includes('application/json')) {
-        // Intentar obtener el texto de la respuesta para depuración
-        const responseText = await apiResponse.text();
-        console.error('Respuesta no JSON. Contenido:', responseText);
-        throw new Error(`Respuesta no es JSON válido. Contenido: ${responseText}`);
-      }
-
-      const apiResponseData = await apiResponse.json();
-
-      console.log('API Response Data:', apiResponseData);
+      const apiResponseData = await apiResponse.json()
 
       if (!apiResponseData.success) {
-        console.error("API submission failed:", {
-          status: apiResponse.status,
-          error: apiResponseData
-        });
-        
+        console.error("API submission failed:", apiResponseData)
         alert(`Error al guardar la inspección: ${apiResponseData.message || 'Error desconocido'}`)
-        return;
+        return
       }
 
-      console.log("Inspection submitted successfully:", apiResponseData);
-      
-      // Verificar resultados de Airtable
-      if (!apiResponseData.airtableResults.success) {
-        console.warn("Algunos registros de Airtable no se guardaron completamente");
-        alert("Algunos registros no se guardaron correctamente en Airtable");
-      }
+      // Success message
+      alert(`Inspección guardada exitosamente. Se ha enviado un correo a ${data.guestEmail} con el PDF adjunto`)
 
-      // Verificar resultado de correo
-      if (!apiResponseData.emailResult.success) {
-        console.warn("No se pudo enviar el correo de confirmación");
-        alert("No se pudo enviar el correo de confirmación. Por favor, verifique su dirección de correo.");
-      }
-
-      // Generar PDF
-      await generatePDF()
-
-      // Resetear formulario
+      // Reset form
       form.reset()
-      setInspectionData({
-        frontLeftSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
-        frontRightSide: { scratches: 0, missingParts: 0, damageBumps: 0 },
-      })
+      setDamageRecords([])
       if (signaturePad) {
         signaturePad.clear()
       }
 
-      // Mostrar mensaje de éxito
-      alert(`Inspección guardada exitosamente. Vista previa: ${apiResponseData.previewLink}`)
-
     } catch (error: unknown) {
       console.error("Error submitting to API:", error)
-      if (error instanceof Error) {
-        console.error("Error details:", {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
       alert(`Error de red: No se pudo guardar la inspección`)
     }
+  }
+
+  // Función de validación de correo electrónico
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return emailRegex.test(email.trim())
   }
 
   return (
@@ -485,212 +425,80 @@ export default function GolfCartInspectionForm() {
               />
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Section</TableHead>
-                  <TableHead>Scratches</TableHead>
-                  <TableHead>Missing Parts</TableHead>
-                  <TableHead>Damage/Bumps</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell>Front Left</TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontLeftScratchesQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = Number(e.target.value);
-                                field.onChange(value);
-                                setInspectionData(prev => ({
-                                  ...prev,
-                                  frontLeftSide: {
-                                    ...prev.frontLeftSide,
-                                    scratches: value
-                                  }
-                                }));
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontLeftMissingPartsQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontLeftSide', 
-                                  'missingParts', 
-                                  Number(value)
-                                )
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontLeftDamageBumpsQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontLeftSide', 
-                                  'damageBumps', 
-                                  Number(value)
-                                )
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Front Right</TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontRightScratchesQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontRightSide', 
-                                  'scratches', 
-                                  Number(value)
-                                )
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontRightMissingPartsQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontRightSide', 
-                                  'missingParts', 
-                                  Number(value)
-                                )
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <FormField
-                      control={form.control}
-                      name="frontRightDamageBumpsQuantity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0"
-                              step="1"
-                              pattern="\d*"
-                              inputMode="numeric"
-                              placeholder="0"
-                              className="appearance-none"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/[^0-9]/g, '')
-                                field.onChange(value)
-                                handleInspectionDataChange(
-                                  'frontRightSide', 
-                                  'damageBumps', 
-                                  Number(value)
-                                )
-                              }}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            {/* Dynamic Damage Records */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Damage Records</h3>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={addDamageRecord}
+                >
+                  <PlusIcon className="mr-2 h-4 w-4" /> Add Record
+                </Button>
+              </div>
+
+              {damageRecords.map((record, index) => (
+                <div key={index} className="grid grid-cols-4 gap-4 items-center border p-4 rounded-md">
+                  <Select 
+                    value={record.section} 
+                    onValueChange={(value) => {
+                      const newRecords = [...damageRecords]
+                      newRecords[index].section = value
+                      setDamageRecords(newRecords)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Section" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["Front Left", "Front Right", "Rear Left", "Rear Right"].map((section) => (
+                        <SelectItem key={section} value={section}>{section}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select 
+                    value={record.damageType} 
+                    onValueChange={(value) => {
+                      const newRecords = [...damageRecords]
+                      newRecords[index].damageType = value
+                      setDamageRecords(newRecords)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Damage Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Scratches">Scratches</SelectItem>
+                      <SelectItem value="Missing Parts">Missing Parts</SelectItem>
+                      <SelectItem value="Damage/Bumps">Damage/Bumps</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Input 
+                    type="number" 
+                    placeholder="Quantity" 
+                    value={record.quantity} 
+                    onChange={(e) => {
+                      const newRecords = [...damageRecords]
+                      newRecords[index].quantity = Number(e.target.value)
+                      setDamageRecords(newRecords)
+                    }}
+                  />
+
+                  <Button 
+                    type="button" 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => removeDamageRecord(index)}
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
 
             <FormField
               control={form.control}

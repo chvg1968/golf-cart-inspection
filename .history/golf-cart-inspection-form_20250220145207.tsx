@@ -126,25 +126,23 @@ const submitForm = async (formData: FormData & { pdfBase64: string; }) => {
     // Validación exhaustiva de datos antes del envío
     const sanitizedData = {
       property: formData.property,
-      cartNumber: formData.cartNumber,
-      guestName: formData.guestName,
-      guestEmail: formData.guestEmail,
-      guestPhone: formData.guestPhone || '', 
-      date: formData.date,
+      cartNumber: formData.cartNumber.toString(),
+      guestName: formData.guestName.trim(),
+      guestEmail: formData.guestEmail.trim().toLowerCase(),
+      guestPhone: (formData.guestPhone || '').trim(),
       inspectionDate: format(formData.date, 'yyyy-MM-dd'),
+      pdfBase64: formData.pdfBase64,
+      previewObservationsByGuest: (formData.previewObservationsByGuest || '').trim(),
+      acceptInspectionTerms: formData.acceptInspectionTerms,
+      guestSignature: formData.guestSignature,
       damageRecords: formData.damageRecords.map(record => ({
         section: record.section,
         damageType: record.damageType,
-        quantity: record.quantity
-      })),
-      previewObservationsByGuest: formData.previewObservationsByGuest,
-      acceptInspectionTerms: formData.acceptInspectionTerms,
-      guestSignature: formData.guestSignature,
-      pdfBase64: formData.pdfBase64
+        quantity: Math.max(0, Math.round(record.quantity)) // Asegurar cantidad no negativa
+      }))
     };
 
-    // Log de datos sanitizados para verificación
-    console.log('Datos sanitizados para envío:', JSON.stringify(sanitizedData, null, 2));
+  
 
     // Validación adicional
     const requiredFields = ['property', 'cartNumber', 'guestName', 'guestEmail', 'inspectionDate', 'pdfBase64'];
@@ -233,20 +231,19 @@ const GolfCartInspectionForm: React.FC = () => {
     formState: { errors }, 
     reset,
     setValue,
-    watch,
-    getValues
+    watch
   } = useForm<FormData>({
     defaultValues: {
       property: '',
       cartNumber: undefined,
+      date: new Date(),
       guestName: '',
       guestEmail: '',
-      guestPhone: '', 
-      date: new Date(),
-      damageRecords: [],
-      previewObservationsByGuest: null,
+      guestPhone: '',
+      previewObservationsByGuest: '',
       acceptInspectionTerms: false,
-      guestSignature: null
+      guestSignature: '',
+      damageRecords: []
     },
     resolver: zodResolver(schema)
   });
@@ -278,35 +275,56 @@ const GolfCartInspectionForm: React.FC = () => {
     try {
       setIsSubmitting(true);
 
-      // Obtener el valor del teléfono directamente del input
-      const guestPhoneValue = (document.getElementById('guestPhone') as HTMLInputElement)?.value || '';
+      // Validaciones básicas
+      const requiredFields = [
+        'property', 
+        'cartNumber', 
+        'guestName', 
+        'guestEmail', 
+        'date'
+      ];
+      
+      const missingFields = requiredFields.filter(field => {
+        const value = data[field as keyof FormData];
+        
+        // Validación específica para cartNumber
+        if (field === 'cartNumber') {
+          return value === undefined || value === null || Number(value) <= 0;
+        }
+        
+        return !value;
+      });
 
+      if (missingFields.length > 0) {
+        toast.error(`Please complete the following fields: ${missingFields.join(', ')}`);
+        return;
+      }
+
+      // Preparación de datos para envío inicial
       const formDataToSubmit = {
         ...data,
-        guestPhone: guestPhoneValue,
-        // Añadir valores por defecto para campos que pueden estar undefined
-        damageRecords: data.damageRecords || [], // Array vacío si no hay daños
+        cartNumber: Number(data.cartNumber), // Conversión explícita a número
         inspectionDate: format(data.date, 'yyyy-MM-dd'),
-        cartNumber: Number(data.cartNumber),
-        previewObservationsByGuest: data.previewObservationsByGuest || null,
-        acceptInspectionTerms: data.acceptInspectionTerms || false,
-        guestSignature: data.guestSignature || null
+        damageRecords,
+        previewObservationsByGuest: null, // Inicialmente nulo
+        acceptInspectionTerms: false, // Inicialmente falso
+        guestSignature: null // Inicialmente nulo
       };
 
       console.log('🚀 Datos a enviar:', JSON.stringify(formDataToSubmit, null, 2));
 
-      console.log('Estado de guestPhone:', {
-        formDataValue: formDataToSubmit.guestPhone,
-        inputValue: guestPhoneValue
-      });
-
       // Generación de PDF
       const pdfBase64 = await generatePDF(formRef);
+      
+      if (!pdfBase64) {
+        toast.error('Could not generate PDF');
+        return;
+      }
 
-      // Añadir PDF a los datos
-      formDataToSubmit.pdfBase64 = pdfBase64;
-
-      const response = await submitForm(formDataToSubmit);
+      const response = await submitForm({
+        ...formDataToSubmit,
+        pdfBase64
+      });
 
       toast.success('Inspection Submitted Successfully', {
         description: 'Your golf cart inspection form has been processed. Data updated in Airtable and verification email sent.',
@@ -316,7 +334,8 @@ const GolfCartInspectionForm: React.FC = () => {
       
       // Resetear formulario después del envío inicial
       reset();
-      setDamageRecords([]); // Reiniciar lista de daños
+      setDamageRecords([]);
+
     } catch (error) {
       console.error('Error submitting form:', error);
       toast.error('Error submitting form. Please try again.');
@@ -410,7 +429,6 @@ const GolfCartInspectionForm: React.FC = () => {
             <div>
               <Label>Guest Phone (Optional)</Label>
               <Input 
-                id="guestPhone"
                 type="tel" 
                 {...register('guestPhone')}
               />

@@ -64,27 +64,27 @@ async function sendInspectionEmail(data: FormData): Promise<void> {
     const emailResponse = await resend.emails.send({
       from: 'Golf Cart Inspection <inspection@resend.dev>',
       to: [data.guestEmail],
-      subject: `Informe de Inspección de Carrito de Golf - Carrito #${data.cartNumber}`,
+      subject: `Golf Cart Inspection Report - Cart #${data.cartNumber}`,
       html: `
-        <h2>Formulario de Inspección de Carrito de Golf</h2>
-        <p>Estimado/a ${data.guestName},</p>
-        <p>Gracias por completar el formulario de inspección de carrito de golf. Encontrará el documento de inspección adjunto.</p>
-        <p>Detalles de la Inspección:</p>
+        <h2>Golf Cart Inspection Form</h2>
+        <p>Dear ${data.guestName},</p>
+        <p>Thank you for completing the golf cart inspection form. Please find the inspection document attached.</p>
+        <p>Inspection Details:</p>
         <ul>
-          <li>Propiedad: ${data.property}</li>
-          <li>Número de Carrito: ${data.cartNumber}</li>
-          <li>Fecha de Inspección: ${data.inspectionDate}</li>
+          <li>Property: ${data.property}</li>
+          <li>Cart Number: ${data.cartNumber}</li>
+          <li>Inspection Date: ${data.inspectionDate}</li>
         </ul>
-        ${data.observations ? `<p>Observaciones: ${data.observations}</p>` : ''}
-        <p>Saludos cordiales,<br>Equipo de Gestión de Carritos de Golf</p>
+        ${data.previewObservationsByGuest ? `<p>Guest Observations: ${data.previewObservationsByGuest}</p>` : ''}
+        <p>Greetings,<br>Luxe Properties</p>
       `,
       attachments: [{
-        filename: `inspeccion-carrito-${data.cartNumber}.pdf`,
+        filename: `golf-cart-inspection-${data.cartNumber}.pdf`,
         content: pdfBuffer
       }]
     });
 
-    console.log('Respuesta de envío de correo:', emailResponse);
+    console.log('Email sending response:', emailResponse);
   } catch (emailError) {
     console.error('Error al enviar correo electrónico:', emailError);
     throw emailError;
@@ -173,13 +173,6 @@ const validateGolfCartNumber = (cartNumber: any): number => {
   // Convertir explícitamente a número
   const parsedNumber = Number(cartNumber);
 
-  console.log('🔍 Datos de entrada:', {
-    cartNumber,
-    type: typeof cartNumber,
-    parsedNumber,
-    isNaN: isNaN(parsedNumber)
-  });
-
   // Verificar que sea un número válido
   if (isNaN(parsedNumber)) {
     throw new Error('Golf Cart Number must be a valid number');
@@ -198,6 +191,24 @@ const validateGolfCartNumber = (cartNumber: any): number => {
   return parsedNumber;
 };
 
+// Función para generar contenido de correo en inglés
+const generarContenidoCorreo = (datosInspeccion: any) => {
+  return `Golf Cart Inspection Form
+
+Dear ${datosInspeccion['Guest Name']},
+
+Thank you for completing the golf cart inspection form. Please find the inspection document attached.
+
+Inspection Details:
+
+Property: ${datosInspeccion['Property']}
+Golf Cart Number: ${datosInspeccion['Golf Cart Number']}
+Inspection Date: ${datosInspeccion['Inspection Date']}
+
+Greetings,
+Luxe Properties`;
+};
+
 // Manejador de API
 export default async function handler(
   req: NextApiRequest,
@@ -214,7 +225,14 @@ export default async function handler(
 
     const data = req.body;
 
-    console.log('🚀 Datos recibidos:', JSON.stringify(data, null, 2));
+    console.log('🚀 Datos recibidos:', {
+      property: data.property,
+      cartNumber: data.cartNumber,
+      guestName: data.guestName,
+      guestEmail: data.guestEmail,
+      guestPhone: data.guestPhone, // Log específico de número telefónico
+      inspectionDate: data.inspectionDate
+    });
 
     // Validaciones de campos requeridos
     const requiredFields = [
@@ -245,26 +263,25 @@ export default async function handler(
       'Inspection Date': format(data.inspectionDate, 'yyyy-MM-dd'),
       'Guest Name': data.guestName,
       'Guest Email': data.guestEmail,
-      'Guest Phone': data.guestPhone || '',
-      'Golf Cart Signature Checked': false
+      'Guest Phone': data.guestPhone || '', // Siempre enviar teléfono
+      'Golf Cart Signature Checked': false,
+      'Golf Cart Inspection Send': false // Por defecto falso
     };
 
     // Campos opcionales con validación
     if (data.previewObservationsByGuest) {
-      camposAirtable['Golf Cart Inspection Send'] = data.previewObservationsByGuest;
+      camposAirtable['Golf Cart Inspection Send'] = true; // Marcar como true si hay observaciones
     }
 
-    // Procesar registros de daños de manera compacta
-    if (data.damageRecords && data.damageRecords.length > 0) {
-      const damageSummary = data.damageRecords.map(record => 
-        `${record.section}: ${record.damageType} (${record.quantity})`
-      ).join(' | ');
-
-      // Si hay espacio, agregar resumen de daños a un campo existente
-      camposAirtable['Guest Phone'] += ` | Damages: ${damageSummary}`;
+    // Asegurar envío de teléfono si está presente
+    if (data.guestPhone && data.guestPhone.trim() !== '') {
+      camposAirtable['Guest Phone'] = data.guestPhone.trim();
     }
 
-    console.log('🔍 Campos para Airtable:', JSON.stringify(camposAirtable, null, 2));
+    // Forzar envío de Golf Cart Inspection Send
+    camposAirtable['Golf Cart Inspection Send'] = true;
+
+    console.log('Campos para Airtable:', JSON.stringify(camposAirtable, null, 2));
 
     try {
       // Validar campos antes de enviar
@@ -283,7 +300,13 @@ export default async function handler(
 
       // Intentar enviar correo electrónico
       try {
+        const contenidoCorreo = generarContenidoCorreo(camposAirtable);
         await sendInspectionEmail(data);
+        await enviarCorreo({
+          to: data.guestEmail,
+          subject: 'Golf Cart Inspection - Luxe Properties',
+          text: contenidoCorreo
+        });
       } catch (emailError) {
         console.error('Error al enviar correo electrónico:', emailError);
         // No interrumpir el flujo principal

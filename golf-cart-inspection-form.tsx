@@ -91,101 +91,97 @@ const isValidEmail = (email: string): boolean => {
 
 const generatePDF = async (formRef: React.RefObject<HTMLDivElement>): Promise<string> => {
   if (!formRef.current) {
-    toast.error('Form reference is missing');
-    return '';
+    throw new Error('Form reference is not available');
   }
-  
+
   try {
-    const canvas = await html2canvas(formRef.current);
-    const imgData = canvas.toDataURL('image/png');
-    
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'px',
-      format: 'a4',
+    const canvas = await html2canvas(formRef.current, {
+      scale: 1, // Reducir resolución
+      useCORS: true,
+      logging: false,
+      allowTaint: true,
+      scrollX: 0,
+      scrollY: -window.scrollY
     });
 
+    const imgData = canvas.toDataURL('image/jpeg', 0.5); // Comprimir imagen
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const imgProps = pdf.getImageProperties(imgData);
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-    
-    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth * ratio, imgHeight * ratio);
-    
+
+    // Calcular proporción para mantener aspecto
+    const ratio = imgProps.width / imgProps.height;
+    const imgHeight = pdfWidth / ratio;
+    const imgWidth = pdfWidth;
+
+    // Centrar imagen verticalmente
+    const verticalOffset = (pdfHeight - imgHeight) / 2;
+
+    // Añadir imagen centrada
+    pdf.addImage(
+      imgData, 
+      'JPEG', 
+      0,  // X comenzando desde el borde izquierdo
+      verticalOffset,  // Y centrado verticalmente 
+      imgWidth, 
+      imgHeight,
+      undefined,
+      'FAST' // Compresión rápida
+    );
+
+    // Añadir título y pie de página
+    pdf.setFontSize(10);
+    pdf.setTextColor(100);
+    pdf.text('Golf Cart Inspection Report', pdfWidth / 2, 10, { align: 'center' });
+    pdf.text('Luxe Properties', pdfWidth / 2, pdfHeight - 10, { align: 'center' });
+
+    // Convertir a base64 con compresión
     return pdf.output('datauristring');
   } catch (error) {
     console.error('Error generating PDF:', error);
-    toast.error('Failed to generate PDF');
-    return '';
+    throw error;
   }
 };
 
-const submitForm = async (formData: FormData & { pdfBase64: string; }) => {
+const submitForm = async (formData: FormData & { pdfBase64: string }) => {
   try {
-    // Validación exhaustiva de datos antes del envío
-    const sanitizedData = {
-      property: formData.property,
-      cartNumber: formData.cartNumber,
-      guestName: formData.guestName,
-      guestEmail: formData.guestEmail,
-      guestPhone: formData.guestPhone || '', 
-      date: formData.date,
-      inspectionDate: format(formData.date, 'yyyy-MM-dd'),
-      damageRecords: formData.damageRecords.map(record => ({
-        section: record.section,
-        damageType: record.damageType,
-        quantity: record.quantity
-      })),
-      previewObservationsByGuest: formData.previewObservationsByGuest,
-      acceptInspectionTerms: formData.acceptInspectionTerms,
-      guestSignature: formData.guestSignature,
-      pdfBase64: formData.pdfBase64
-    };
-
-    // Log de datos sanitizados para verificación
-    console.log('Datos sanitizados para envío:', JSON.stringify(sanitizedData, null, 2));
-
-    // Validación adicional
-    const requiredFields = ['property', 'cartNumber', 'guestName', 'guestEmail', 'inspectionDate', 'pdfBase64'];
-    const missingFields = requiredFields.filter(field => 
-      !sanitizedData[field as keyof typeof sanitizedData]
-    );
-
-    if (missingFields.length > 0) {
-      console.error('Campos faltantes:', missingFields);
-      throw new Error(`Campos requeridos faltantes: ${missingFields.join(', ')}`);
-    }
-
     const response = await fetch('/api/submit-form', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sanitizedData),
+      body: JSON.stringify(formData),
     });
 
     // Registro de respuesta del servidor
     const responseData = await response.json();
-    console.log('Respuesta del servidor:', responseData);
+    
+    console.log('Respuesta del servidor:', {
+      status: response.status,
+      data: responseData
+    });
 
     if (!response.ok) {
-      console.error('Error en la respuesta del servidor:', {
-        status: response.status,
-        statusText: response.statusText,
-        responseData
-      });
-      throw new Error(responseData.mensaje || responseData.message || 'Error al enviar el formulario');
+      // Extraer mensaje de error de la respuesta
+      const errorMessage = responseData.mensaje || 
+                           responseData.message || 
+                           'Error desconocido al enviar el formulario';
+      
+      throw new Error(errorMessage);
     }
 
     return responseData;
   } catch (error) {
-    // Registro exhaustivo del error
-    console.error('Error detallado en el envío del formulario:', {
-      errorNombre: error instanceof Error ? error.name : 'Error Desconocido',
-      errorMensaje: error instanceof Error ? error.message : 'Error desconocido',
-      errorPila: error instanceof Error ? error.stack : 'Sin traza de pila',
-      errorCompleto: error
+    console.error('Error detallado en submitForm:', {
+      errorNombre: error.name,
+      errorMensaje: error.message,
+      errorPila: error.stack
     });
     throw error;
   }

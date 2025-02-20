@@ -1,566 +1,578 @@
-"use client"
-
-import Image from "next/legacy/image"
 import { CalendarIcon, PlusIcon, TrashIcon } from "lucide-react"
 import { format } from "date-fns"
 import { useState, useRef } from "react"
-import SignatureCanvas from "react-signature-canvas"
-import { jsPDF } from 'jspdf'
-import html2canvas from 'html2canvas'
-
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useForm } from "react-hook-form"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
+import { toast } from "sonner"
+import { jsPDF } from "jspdf"
+import html2canvas from 'html2canvas'
+import SignatureCanvas from 'react-signature-canvas'
+import { useId } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 
-// Airtable configuration (to be completed later)
-const AIRTABLE_API_KEY = "patPipF2khc2ardsu.02bfb33fe862b775367438629e8b29e60660b40d60c543ae2552bb597de696a4"
-const AIRTABLE_BASE_ID = "appNuegQuklxOYfDE"
-const AIRTABLE_TABLE_NAME = "GolfCart"
+type DamageRecord = {
+  section: 
+    | 'Front Left Side'
+    | 'Front Right Side'
+    | 'Rear Left Side'
+    | 'Rear Right Side'
+    | 'Roof'
+    | 'Seats'
+    | 'Steering & Dashboard'
+    | 'Wheels & Tires'
+    | 'Front Lights'
+    | 'Rear Lights';
+  
+  damageType: 
+    | 'Scratches'
+    | 'Missing parts'
+    | 'Damage/Bumps';
+  
+  quantity: number;
+};
 
-// Tipos para la estructura de datos de inspección
+const PROPERTIES = [
+  'Atl. G7 Casa Prestige',
+  'Est. 24 Casa Paraiso',
+  '3325 Villa Clara',
+  '7256 Villa Palacio',
+  '10180 Villa Flora',
+  '5138 Villa Paloma',
+  'Temporal',
+  '2-102 Villa Ocean Bliss',
+  '10389 Villa Tiffany',
+  '2-208 Ocean Haven Villa'
+];
+
+const INSPECTION_SECTIONS: DamageRecord['section'][] = [
+  'Front Left Side',
+  'Front Right Side', 
+  'Rear Left Side',
+  'Rear Right Side',
+  'Roof',
+  'Seats',
+  'Steering & Dashboard', 
+  'Wheels & Tires',
+  'Front Lights',
+  'Rear Lights'
+];
+
+const DAMAGE_TYPES: DamageRecord['damageType'][] = [
+  'Scratches',
+  'Missing parts', 
+  'Damage/Bumps'
+];
+
 type FormData = {
   property: string;
-  cartNumber: string;
-  date: Date | null;
+  cartNumber: number;
   guestName: string;
   guestEmail: string;
-  guestPhone: string;
-  observations: string;
-  signatureChecked: boolean;
-}
+  guestPhone?: string;
+  date: Date;
+  previewObservationsByGuest?: string;
+  acceptInspectionTerms: boolean;
+  guestSignature?: string;
+  damageRecords: DamageRecord[];
+};
 
-export default function GolfCartInspectionForm() {
-  const [signaturePad, setSignaturePad] = useState<any>(null)
-  const [damageRecords, setDamageRecords] = useState<{
-    section: string;
-    damageType: string;
-    quantity: number;
-  }[]>([])
-  const formRef = useRef<HTMLFormElement>(null)
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
 
-  const form = useForm<FormData>({
-    defaultValues: {
-      property: "",
-      cartNumber: "",
-      date: null,
-      guestName: "",
-      guestEmail: "",
-      guestPhone: "",
-      observations: "",
-      signatureChecked: false,
-    }
-  })
-
-  // Function to add a new damage record
-  const addDamageRecord = () => {
-    setDamageRecords([
-      ...damageRecords, 
-      { section: "", damageType: "", quantity: 0 }
-    ])
+const generatePDF = async (formRef: React.RefObject<HTMLDivElement>): Promise<string> => {
+  if (!formRef.current) {
+    toast.error('Form reference is missing');
+    return '';
   }
-
-  // Function to remove a damage record
-  const removeDamageRecord = (indexToRemove: number) => {
-    setDamageRecords(damageRecords.filter((_, index) => index !== indexToRemove))
-  }
-
-  // Función para generar PDF
-  const generatePDF = async (data: FormData, damageRecords: {section: string, damageType: string, quantity: number}[]) => {
-    const doc = new jsPDF({
+  
+  try {
+    const canvas = await html2canvas(formRef.current);
+    const imgData = canvas.toDataURL('image/png');
+    
+    const pdf = new jsPDF({
       orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    })
+      unit: 'px',
+      format: 'a4',
+    });
 
-    // Configuraciones de estilo
-    const pageWidth = doc.internal.pageSize.getWidth()
-    const margin = 10
-    let currentY = margin
-
-    // Título del documento
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Golf Cart Inspection Report', pageWidth / 2, currentY, { align: 'center' })
-    currentY += 15
-
-    // Información del huésped
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Nombre: ${data.guestName}`, margin, currentY)
-    currentY += 7
-    doc.text(`Correo Electrónico: ${data.guestEmail}`, margin, currentY)
-    currentY += 7
-    doc.text(`Teléfono: ${data.guestPhone}`, margin, currentY)
-    currentY += 7
-    doc.text(`Propiedad: ${data.property}`, margin, currentY)
-    currentY += 7
-    doc.text(`Número de Carro: ${data.cartNumber}`, margin, currentY)
-    currentY += 7
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
     
-    // Fecha de inspección
-    const inspectionDate = data.date ? format(data.date, 'dd/MM/yyyy') : format(new Date(), 'dd/MM/yyyy')
-    doc.text(`Fecha de Inspección: ${inspectionDate}`, margin, currentY)
-    currentY += 10
-
-    // Registros de daños
-    if (damageRecords.length > 0) {
-      doc.setFont('helvetica', 'bold')
-      doc.text('Registros de Daños:', margin, currentY)
-      currentY += 7
-      
-      doc.setFont('helvetica', 'normal')
-      damageRecords.forEach((record, index) => {
-        doc.text(`${index + 1}. Sección: ${record.section}`, margin, currentY)
-        currentY += 5
-        doc.text(`   Tipo de Daño: ${record.damageType}`, margin, currentY)
-        currentY += 5
-        doc.text(`   Cantidad: ${record.quantity}`, margin, currentY)
-        currentY += 7
-      })
-    }
-
-    // Observaciones
-    if (data.observations) {
-      doc.setFont('helvetica', 'bold')
-      doc.text('Observaciones:', margin, currentY)
-      currentY += 7
-      
-      doc.setFont('helvetica', 'normal')
-      // Dividir observaciones largas en múltiples líneas
-      const observationLines = doc.splitTextToSize(data.observations, pageWidth - 2 * margin)
-      doc.text(observationLines, margin, currentY)
-      currentY += (observationLines.length * 5)
-    }
-
-    // Sección de Firma con más detalles
-    currentY += 15
-    doc.setFont('helvetica', 'bold')
-    doc.text('Firma del Huésped', margin, currentY)
-    currentY += 7
-
-    // Cuadro de firma con líneas de referencia
-    doc.setLineWidth(0.5)
-    doc.setDrawColor(200) // Color gris claro
+    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth * ratio, imgHeight * ratio);
     
-    // Rectángulo para firma
-    const signatureBoxWidth = pageWidth - 2 * margin
-    const signatureBoxHeight = 40
-    doc.rect(margin, currentY, signatureBoxWidth, signatureBoxHeight)
-
-    // Líneas de firma
-    const lineSpacing = signatureBoxHeight / 4
-    for (let i = 1; i < 4; i++) {
-      doc.setDrawColor(230) // Color gris más claro
-      doc.line(margin, currentY + i * lineSpacing, margin + signatureBoxWidth, currentY + i * lineSpacing)
-    }
-
-    // Texto adicional
-    currentY += signatureBoxHeight + 5
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
-    doc.setTextColor(100) // Gris oscuro
-    doc.text('Al firmar, confirmo que la inspección del carrito de golf es precisa y acepto los términos.', margin, currentY)
-
-    // Pie de página
-    doc.setFontSize(8)
-    doc.setTextColor(150) // Gris medio
-    doc.text(`Documento generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, margin, pageWidth - 10, { align: 'left' })
-
-    // Convertir PDF a Blob
-    return doc.output('blob')
+    return pdf.output('datauristring');
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    toast.error('Failed to generate PDF');
+    return '';
   }
+};
+
+const submitForm = async (formData: FormData & { pdfBase64: string; }) => {
+  try {
+    // Validación exhaustiva de datos antes del envío
+    const sanitizedData = {
+      property: formData.property,
+      cartNumber: formData.cartNumber.toString(),
+      guestName: formData.guestName.trim(),
+      guestEmail: formData.guestEmail.trim().toLowerCase(),
+      guestPhone: (formData.guestPhone || '').trim(),
+      inspectionDate: format(formData.date, 'yyyy-MM-dd'),
+      pdfBase64: formData.pdfBase64,
+      previewObservationsByGuest: (formData.previewObservationsByGuest || '').trim(),
+      acceptInspectionTerms: formData.acceptInspectionTerms,
+      guestSignature: formData.guestSignature,
+      damageRecords: formData.damageRecords.map(record => ({
+        section: record.section,
+        damageType: record.damageType,
+        quantity: Math.max(0, Math.round(record.quantity)) // Asegurar cantidad no negativa
+      }))
+    };
+
+    // Registro detallado de datos antes del envío
+    console.log('Datos sanitizados para envío:', JSON.stringify(sanitizedData, null, 2));
+
+    // Validación adicional
+    const requiredFields = ['property', 'cartNumber', 'guestName', 'guestEmail', 'inspectionDate', 'pdfBase64'];
+    const missingFields = requiredFields.filter(field => 
+      !sanitizedData[field as keyof typeof sanitizedData]
+    );
+
+    if (missingFields.length > 0) {
+      console.error('Campos faltantes:', missingFields);
+      throw new Error(`Campos requeridos faltantes: ${missingFields.join(', ')}`);
+    }
+
+    const response = await fetch('/api/submit-form', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(sanitizedData),
+    });
+
+    // Registro de respuesta del servidor
+    const responseData = await response.json();
+    console.log('Respuesta del servidor:', responseData);
+
+    if (!response.ok) {
+      console.error('Error en la respuesta del servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        responseData
+      });
+      throw new Error(responseData.mensaje || responseData.message || 'Error al enviar el formulario');
+    }
+
+    return responseData;
+  } catch (error) {
+    // Registro exhaustivo del error
+    console.error('Error detallado en el envío del formulario:', {
+      errorNombre: error instanceof Error ? error.name : 'Error Desconocido',
+      errorMensaje: error instanceof Error ? error.message : 'Error desconocido',
+      errorPila: error instanceof Error ? error.stack : 'Sin traza de pila',
+      errorCompleto: error
+    });
+    throw error;
+  }
+};
+
+const validateCartNumber = (value: number) => {
+  // Verificar que sea un número positivo
+  if (!value || value <= 0) {
+    return 'Golf Cart Number must be a positive number';
+  }
+  
+  // Opcional: Límite máximo de número de carrito (ajustar según necesidad)
+  if (value > 9999) {
+    return 'Golf Cart Number cannot exceed 9999';
+  }
+  
+  return true;
+};
+
+const GolfCartInspectionForm: React.FC = () => {
+  // Hook para generar ID consistente
+  const inspectionId = useId().replace(/:/g, '');
+
+  const formRef = useRef<HTMLFormElement>(null);
+  const signatureRef = useRef<SignatureCanvas>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [damageRecords, setDamageRecords] = useState<DamageRecord[]>([]);
+  const [acceptInspectionTerms, setAcceptInspectionTerms] = useState(false);
+  const [guestSignature, setGuestSignature] = useState('');
+
+  const schema = z.object({
+    property: z.string().min(1, 'Property is required'),
+    cartNumber: z.number().refine(
+      (value) => value > 0, 
+      { message: 'Golf Cart Number must be a positive number' }
+    ),
+    guestName: z.string().min(1, 'Guest Name is required'),
+    guestEmail: z.string().email('Invalid email address').min(1, 'Guest Email is required'),
+    date: z.date(),
+  });
+
+  const {
+    register, 
+    handleSubmit, 
+    formState: { errors }, 
+    reset,
+    setValue,
+    watch
+  } = useForm<FormData>({
+    defaultValues: {
+      property: '',
+      cartNumber: undefined,
+      date: new Date(),
+      guestName: '',
+      guestEmail: '',
+      guestPhone: '',
+      previewObservationsByGuest: '',
+      acceptInspectionTerms: false,
+      guestSignature: '',
+      damageRecords: []
+    },
+    resolver: zodResolver(schema)
+  });
+
+  const addDamageRecord = () => {
+    setDamageRecords(prev => [
+      ...prev,
+      { section: 'Front Left Side', damageType: 'Scratches', quantity: 0 }
+    ]);
+  };
+
+  const removeDamageRecord = (indexToRemove: number) => {
+    setDamageRecords(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+  const updateDamageRecord = <K extends keyof DamageRecord>(
+    index: number,
+    field: K,
+    value: DamageRecord[K]
+  ) => {
+    setDamageRecords(prev => {
+      const newRecords = [...prev];
+      newRecords[index][field] = value;
+      return newRecords;
+    });
+  };
 
   const onSubmit = async (data: FormData) => {
-    // Validar campos requeridos
-    if (!data.guestName || !data.guestName.trim()) {
-      alert("Por favor, ingrese el nombre del huésped")
-      return
-    }
-
-    if (!data.guestEmail || !isValidEmail(data.guestEmail)) {
-      alert("Por favor, ingrese un correo electrónico válido")
-      return
-    }
-
-    // Validate and convert Golf Cart Number
-    const cartNumber = parseInt(data.cartNumber, 10)
-    if (isNaN(cartNumber)) {
-      alert("Por favor, ingrese un número de carro válido")
-      return
-    }
-
-    // Format date for Airtable (YYYY-MM-DD format)
-    const formattedDate = data.date ? format(data.date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')
-
-    // Generate a unique inspection ID
-    const inspectionId = `cart${cartNumber}-${formattedDate}-${Date.now()}`
-      .replace(/[^a-zA-Z0-9-]/g, '') // Remove any invalid characters
-      .toLowerCase() // Ensure lowercase for URL safety
-
     try {
-      // Generate PDF with all form details
-      const pdfBlob = await generatePDF(data, damageRecords)
+      setIsSubmitting(true);
 
-      // Prepare Airtable record data
-      const airtableRecord = {
-        "Inspection ID": inspectionId,
-        "Property": data.property || "Sin Especificar",
-        "Golf Cart Number": cartNumber,
-        "Inspection Date": formattedDate,
-        "Guest Name": data.guestName.trim(),
-        "Guest Email": data.guestEmail.trim().toLowerCase(),
-        "Guest Phone": (data.guestPhone || "").trim(),
-        "Golf Cart Inspection Send": true,
-        "Golf Cart Signature Checked": !!data.signatureChecked
-      }
-
-      // Convert PDF to base64 for transmission
-      const pdfBase64 = pdfBlob ? await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onloadend = () => {
-          try {
-            const base64data = (reader.result as string).split(',')[1]
-            resolve(base64data)
-          } catch (error) {
-            console.error("Error converting PDF to base64:", error)
-            reject(error)
-          }
+      // Validaciones básicas
+      const requiredFields = [
+        'property', 
+        'cartNumber', 
+        'guestName', 
+        'guestEmail', 
+        'date'
+      ];
+      
+      const missingFields = requiredFields.filter(field => {
+        const value = data[field as keyof FormData];
+        
+        // Validación específica para cartNumber
+        if (field === 'cartNumber') {
+          return value === undefined || value === null || Number(value) <= 0;
         }
-        reader.onerror = (error) => {
-          console.error("FileReader error:", error)
-          reject(error)
-        }
-        reader.readAsDataURL(pdfBlob)
-      }) : null
-
-      // Preparar datos de daños
-      const damageRecordsData = damageRecords.map(record => ({
-        section: record.section || "No especificado",
-        damageType: record.damageType || "No especificado",
-        quantity: record.quantity || 0
-      }))
-
-      // Submit to API (which will handle Airtable and email)
-      const apiResponse = await fetch('/api/submit-form', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          airtableRecord: airtableRecord,
-          pdfFile: pdfBase64,
-          damageRecords: damageRecordsData,
-          guestEmail: data.guestEmail.trim().toLowerCase() // Enviar correo explícitamente
-        })
+        
+        return !value;
       });
 
-      const apiResponseData = await apiResponse.json()
-
-      if (!apiResponseData.success) {
-        console.error("API submission failed:", apiResponseData)
-        alert(`Error al guardar la inspección: ${apiResponseData.message || 'Error desconocido'}`)
-        return
+      if (missingFields.length > 0) {
+        toast.error(`Please complete the following fields: ${missingFields.join(', ')}`);
+        return;
       }
 
-      // Success message
-      alert(`Inspección guardada exitosamente. Se ha enviado un correo a ${data.guestEmail} con el PDF adjunto`)
+      // Preparación de datos para envío inicial
+      const formDataToSubmit = {
+        ...data,
+        cartNumber: Number(data.cartNumber), // Conversión explícita a número
+        inspectionDate: format(data.date, 'yyyy-MM-dd'),
+        damageRecords,
+        previewObservationsByGuest: null, // Inicialmente nulo
+        acceptInspectionTerms: false, // Inicialmente falso
+        guestSignature: null // Inicialmente nulo
+      };
 
-      // Reset form
-      form.reset()
-      setDamageRecords([])
-      if (signaturePad) {
-        signaturePad.clear()
+      console.log('🚀 Datos a enviar:', JSON.stringify(formDataToSubmit, null, 2));
+
+      // Generación de PDF
+      const pdfBase64 = await generatePDF(formRef);
+      
+      if (!pdfBase64) {
+        toast.error('Could not generate PDF');
+        return;
       }
 
-    } catch (error: unknown) {
-      console.error("Error submitting to API:", error)
-      alert(`Error de red: No se pudo guardar la inspección`)
+      const response = await submitForm({
+        ...formDataToSubmit,
+        pdfBase64
+      });
+
+      toast.success('Inspection form submitted. An email will be sent for verification.');
+      
+      // Resetear formulario después del envío inicial
+      reset();
+      setDamageRecords([]);
+
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      toast.error('Error submitting form. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-  }
-
-  // Función de validación de correo electrónico
-  const isValidEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(email.trim())
-  }
+  };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
-        <CardTitle className="text-2xl text-center">Golf Cart Inspection</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form 
-            ref={formRef}
-            onSubmit={form.handleSubmit(onSubmit)} 
-            className="space-y-8"
-          >
-            <div className="relative w-full h-[400px] mb-6">
-              <Image
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Golf%20Cart%20Damage%20Inspection%20Check%20list%20Four%20Seater%20edited-qJbaES9ueamIzo64B8vaA7Ln65pMiZ.png"
-                alt="Golf Cart Inspection Diagram"
-                layout="fill"
-                objectFit="contain"
-                unoptimized
-                quality={100}
-              />
-            </div>
+    <form 
+      onSubmit={handleSubmit(onSubmit)} 
+      ref={formRef} 
+      className="max-w-4xl mx-auto p-6 bg-white shadow-md rounded-lg"
+    >
+      <div className="mb-4">
+        <h2 className="text-xl font-bold mb-2">Inspection ID: INSP-{inspectionId}</h2>
+      </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <FormField
-                control={form.control}
-                name="property"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Property</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select property" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="villa-flora">Villa Flora</SelectItem>
-                        <SelectItem value="villa-clara">Villa Clara</SelectItem>
-                        <SelectItem value="villa-paloma">Villa Paloma</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
+      {/* Sección 1: Información Básica */}
+      <div className="mb-6 p-4 border rounded-lg">
+        <h3 className="text-lg font-semibold mb-4">Basic Information</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Property</Label>
+            <Select 
+              value={watch('property')} 
+              onValueChange={(value) => setValue('property', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Property" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROPERTIES.map((prop) => (
+                  <SelectItem key={prop} value={prop}>
+                    {prop}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.property && <p className="text-red-500">{errors.property.message}</p>}
+          </div>
+          
+          <div>
+            <Label>Golf Cart Number</Label>
+            <input 
+              type="number"
+              min={1}
+              max={9999}
+              {...register('cartNumber', { 
+                required: 'Golf Cart Number is required',
+                validate: validateCartNumber,
+                valueAsNumber: true // Importante para manejar como número
+              })}
+              className={`w-full border rounded p-2 ${
+                errors.cartNumber ? 'border-red-500' : ''
+              }`}
+              placeholder="Enter Golf Cart Number"
+            />
+            {errors.cartNumber && (
+              <p className="text-red-500 text-sm mt-1">
+                {errors.cartNumber.message}
+              </p>
+            )}
+          </div>
 
-              <FormField
-                control={form.control}
-                name="cartNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Golf Cart Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter cart number" {...field} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+          <div>
+            <Label>Guest Name</Label>
+            <Input 
+              type="text" 
+              {...register('guestName', { required: 'Guest Name is required' })}
+            />
+            {errors.guestName && <p className="text-red-500">{errors.guestName.message}</p>}
+          </div>
 
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Inspection Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                          >
-                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar 
-                          mode="single" 
-                          selected={field.value || undefined} 
-                          onSelect={field.onChange} 
-                          initialFocus 
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </FormItem>
-                )}
-              />
-            </div>
+          <div>
+            <Label>Guest Email</Label>
+            <Input 
+              type="email" 
+              {...register('guestEmail', { 
+                required: 'Guest Email is required',
+                pattern: {
+                  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                  message: 'Invalid email address'
+                }
+              })}
+            />
+            {errors.guestEmail && <p className="text-red-500">{errors.guestEmail.message}</p>}
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-3 mt-4">
-              <FormField
-                control={form.control}
-                name="guestName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Guest Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter guest name" {...field} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+          <div>
+            <Label>Guest Phone (Optional)</Label>
+            <Input 
+              type="tel" 
+              {...register('guestPhone')}
+            />
+          </div>
 
-              <FormField
-                control={form.control}
-                name="guestEmail"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Guest Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="Enter guest email" {...field} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="guestPhone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Guest Phone</FormLabel>
-                    <FormControl>
-                      <Input type="tel" placeholder="Enter guest phone" {...field} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Dynamic Damage Records */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Damage Records</h3>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={addDamageRecord}
+          <div>
+            <Label>Inspection Date</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={"outline"}
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !watch('date') && "text-muted-foreground"
+                  )}
                 >
-                  <PlusIcon className="mr-2 h-4 w-4" /> Add Record
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {watch('date') ? format(watch('date') as Date, "PPP") : <span>Pick a date</span>}
                 </Button>
-              </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={watch('date') || undefined}
+                  onSelect={(date) => setValue('date', date || null)}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+      </div>
 
-              {damageRecords.map((record, index) => (
-                <div key={index} className="grid grid-cols-4 gap-4 items-center border p-4 rounded-md">
-                  <Select 
-                    value={record.section} 
-                    onValueChange={(value) => {
-                      const newRecords = [...damageRecords]
-                      newRecords[index].section = value
-                      setDamageRecords(newRecords)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Section" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["Front Left", "Front Right", "Rear Left", "Rear Right"].map((section) => (
-                        <SelectItem key={section} value={section}>{section}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+      {/* Sección 2: Damage Records */}
+      <div className="mb-6 p-4 border rounded-lg">
+        <h3 className="text-lg font-semibold mb-4">Damage Records</h3>
+        {damageRecords.map((record, index) => (
+          <div key={index} className="grid grid-cols-4 gap-2 items-center mb-2">
+            <Select 
+              value={record.section}
+              onValueChange={(value) => updateDamageRecord(index, 'section', value as DamageRecord['section'])}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Section" />
+              </SelectTrigger>
+              <SelectContent>
+                {INSPECTION_SECTIONS.map(section => (
+                  <SelectItem key={section} value={section}>
+                    {section}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-                  <Select 
-                    value={record.damageType} 
-                    onValueChange={(value) => {
-                      const newRecords = [...damageRecords]
-                      newRecords[index].damageType = value
-                      setDamageRecords(newRecords)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Damage Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Scratches">Scratches</SelectItem>
-                      <SelectItem value="Missing Parts">Missing Parts</SelectItem>
-                      <SelectItem value="Damage/Bumps">Damage/Bumps</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Input 
-                    type="number" 
-                    placeholder="Quantity" 
-                    value={record.quantity} 
-                    onChange={(e) => {
-                      const newRecords = [...damageRecords]
-                      newRecords[index].quantity = Number(e.target.value)
-                      setDamageRecords(newRecords)
-                    }}
-                  />
-
-                  <Button 
-                    type="button" 
-                    variant="destructive" 
-                    size="sm" 
-                    onClick={() => removeDamageRecord(index)}
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <FormField
-              control={form.control}
-              name="observations"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Preview observations by Guest</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Enter observations"
-                      className="min-h-[100px]"
-                      value={field.value || ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <Select 
+              value={record.damageType} 
+              onValueChange={(value) => updateDamageRecord(index, 'damageType', value as DamageRecord['damageType'])}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Damage Type" />
+              </SelectTrigger>
+              <SelectContent>
+                {DAMAGE_TYPES.map(type => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input 
+              type="number" 
+              placeholder="Quantity" 
+              value={record.quantity} 
+              onChange={(e) => updateDamageRecord(index, 'quantity', Number(e.target.value))}
+              min={0}
             />
-
-            <FormField
-              control={form.control}
-              name="signatureChecked"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>
-                      I have read and accept the inspection terms
-                    </FormLabel>
-                  </div>
-                </FormItem>
-              )}
-            />
-
-            <div className="border rounded-md p-4 bg-muted/10">
-              <SignatureCanvas
-                ref={(ref) => setSignaturePad(ref)}
-                canvasProps={{
-                  className: "w-full h-[100px]",
-                }}
-              />
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => signaturePad?.clear()} 
-                className="mt-2"
-              >
-                Borrar Firma
-              </Button>
-            </div>
-
-            <Button type="submit" className="w-full">
-              Submit Inspection
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={() => removeDamageRecord(index)}
+              className="flex items-center"
+            >
+              <TrashIcon className="h-4 w-4" />
             </Button>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
-  )
-}
+          </div>
+        ))}
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={addDamageRecord}
+          className="flex items-center"
+        >
+          <PlusIcon className="mr-2 h-4 w-4" /> Add Damage
+        </Button>
+      </div>
+
+      {/* Sección 3: Guest Section */}
+      <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+        <h3 className="text-lg font-semibold mb-4">Guest Section</h3>
+        
+        {/* Observaciones del invitado - Inicialmente deshabilitado */}
+        <div className="mb-4">
+          <Label className="text-gray-500">
+            Preview Observations by Guest (Optional, to be enabled later)
+          </Label>
+          <textarea 
+            {...register('previewObservationsByGuest')}
+            placeholder="Observations will be available after initial submission"
+            className="w-full border rounded p-2 bg-gray-200 cursor-not-allowed"
+            disabled
+          />
+        </div>
+
+        {/* Términos de inspección - Inicialmente deshabilitado */}
+        <div className="mb-4">
+          <div className="flex items-center opacity-50 cursor-not-allowed">
+            <input 
+              type="checkbox"
+              checked={false}
+              disabled
+              className="mr-2 cursor-not-allowed"
+            />
+            <label className="text-gray-500">
+              Terms of inspection will be enabled after email verification
+            </label>
+          </div>
+        </div>
+
+        {/* Espacio para firma - Inicialmente deshabilitado */}
+        <div>
+          <Label className="text-gray-500">
+            Guest Signature Space (Will be activated after email verification)
+          </Label>
+          <div className="border rounded p-4 text-center text-gray-500 bg-gray-200">
+            Signature will be added manually after guest email verification
+          </div>
+        </div>
+      </div>
+
+      {/* Submit Button */}
+      <Button 
+        type="submit" 
+        className="w-full"
+      >
+        Submit Inspection
+      </Button>
+    </form>
+  );
+};
+
+export default GolfCartInspectionForm;

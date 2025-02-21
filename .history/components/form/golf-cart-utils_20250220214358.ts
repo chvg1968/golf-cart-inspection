@@ -49,7 +49,7 @@ export const generatePDF = async (formRef: React.RefObject<HTMLFormElement>): Pr
 };
 
 // Definición de tipo para registro de Airtable
-interface AirtableRecord {
+interface BaseAirtableRecord {
   'Property': string;
   'Golf Cart Number': string | number;
   'Inspection Date': string;
@@ -59,8 +59,14 @@ interface AirtableRecord {
   'Golf Cart Signature Checked': boolean;
 }
 
-export const mapFormDataToAirtable = (formData: GolfCartFormData): AirtableRecord => {
-  return {
+// Tipo extendido para campos opcionales
+// type ExtendedAirtableRecord = BaseAirtableRecord & {
+//   'Guest Observations'?: string;
+//   'Damage Records'?: string;
+// };
+
+export const mapFormDataToAirtable = (formData: GolfCartFormData): ExtendedAirtableRecord => {
+  const baseRecord: ExtendedAirtableRecord = {
     'Property': formData.property,
     'Golf Cart Number': formData.cartNumber,
     'Inspection Date': formData.inspectionDate || new Date().toISOString().split('T')[0],
@@ -69,4 +75,18 @@ export const mapFormDataToAirtable = (formData: GolfCartFormData): AirtableRecor
     'Guest Phone': formData.guestPhone || '',
     'Golf Cart Signature Checked': !!formData.guestSignature
   };
+
+  // Añadir observaciones del invitado si existen
+  if (formData.previewObservationsByGuest) {
+    baseRecord['Guest Observations'] = formData.previewObservationsByGuest;
+  }
+
+  // Añadir registros de daños si existen
+  if (formData.damageRecords && formData.damageRecords.length > 0) {
+    baseRecord['Damage Records'] = formData.damageRecords.map(record => 
+      `${record.section}: ${record.damageType} (Qty: ${record.quantity})`
+    ).join('; ');
+  }
+
+  return baseRecord;
 };

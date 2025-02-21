@@ -40,7 +40,7 @@ export interface GolfCartFormData {
   guestSignature?: string | null;
 
   // Campos adicionales
-  golfcartinspectionsend?: boolean;
+  golfCartInspectionSend?: boolean;
   pdfBase64?: string;
 }
 

@@ -67,3 +67,24 @@ export async function updateAirtableRecord(recordId: string, data: Partial<Field
     throw error;
   }
 }
+
+export const getAirtableRecord = async (inspectionId: string): Promise<FieldSet | null> => {
+  try {
+    const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
+    
+    const records = await base(process.env.AIRTABLE_TABLE_NAME || 'Inspections')
+      .select({
+        filterByFormula: `{Inspection ID} = "${inspectionId}"`
+      })
+      .firstPage();
+
+    if (records.length === 0) {
+      return null;
+    }
+
+    return records[0].fields;
+  } catch (error) {
+    console.error('Error fetching Airtable record:', error);
+    throw error;
+  }
+};

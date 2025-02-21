@@ -3,9 +3,9 @@ import { updateAirtableRecord } from '@/app/api/submit-form/airtable-service';
 
 export async function GET(
   request: NextRequest, 
-  { params }: { params: { inspectionId: string } }
+  context: { params: { inspectionId: string } }
 ) {
-  const { inspectionId } = params;
+  const { inspectionId } = context.params;
 
   try {
     // Actualizar registro en Airtable

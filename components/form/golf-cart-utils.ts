@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import { v4 as uuidv4 } from 'uuid';
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
+import crypto from 'crypto';
 
 // Configuración de Vercel Blob (asegúrate de tener las credenciales configuradas)
 
@@ -210,7 +211,8 @@ const base64ToBlob = (base64: string): Blob => {
 };
 
 // Definición de tipo para registro de Airtable
-interface AirtableRecord {
+export interface AirtableRecord {
+  'Inspection ID'?: string;
   'Property': string;
   'Golf Cart Number': string | number;
   'Inspection Date': string;
@@ -222,6 +224,7 @@ interface AirtableRecord {
 
 export const mapFormDataToAirtable = (formData: GolfCartFormData): AirtableRecord => {
   return {
+    'Inspection ID': formData.inspectionId,
     'Property': formData.property,
     'Golf Cart Number': formData.cartNumber,
     'Inspection Date': formData.inspectionDate || new Date().toISOString().split('T')[0],
@@ -261,4 +264,42 @@ const generateUniqueToken = (inspectionId: string): string => {
     .update(`${inspectionId}-signature-confirm`)
     .digest('hex')
     .slice(0, 16);
+};
+
+export const generateGuestLink = (inspectionId: string): string => {
+  // Generar un token único basado en el ID de inspección
+  const token = crypto
+    .createHash('sha256')
+    .update(`${inspectionId}-${Date.now()}-guest-link`)
+    .digest('hex');
+  
+  // Construir URL completa
+  return `${process.env.NEXT_PUBLIC_APP_URL}/guest-inspection/${token}?id=${inspectionId}`;
+};
+
+export const fetchInspectionData = async (inspectionId: string): Promise<GolfCartFormData> => {
+  try {
+    const response = await fetch(`/api/fetch-inspection/${inspectionId}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch inspection data');
+    }
+
+    const data = await response.json();
+    return {
+      property: data['Property'] || '',
+      cartNumber: data['Golf Cart Number'] || '',
+      inspectionDate: data['Inspection Date'] || new Date().toISOString().split('T')[0],
+      guestName: data['Guest Name'] || '',
+      guestEmail: data['Guest Email'] || '',
+      guestPhone: data['Guest Phone'] || '',
+      previewObservationsByGuest: '', // Inicialmente vacío para que el guest lo complete
+      acceptInspectionTerms: false, // El guest debe marcarlo
+      guestSignature: null, // El guest debe firmarlo
+      damageRecords: data.damageRecords || []
+    };
+  } catch (error) {
+    console.error('Error fetching inspection data:', error);
+    throw error;
+  }
 };

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import SignaturePad from 'signature_pad';
 import { 
   GolfCartFormData, 
   FormValidationErrors, 
@@ -10,41 +11,99 @@ import {
   INSPECTION_SECTIONS,
   DAMAGE_TYPES
 } from '.';
-import { PlusIcon, TrashIcon } from 'lucide-react';
+import { PlusIcon, TrashIcon, XIcon } from 'lucide-react';
 import { generatePDF } from './golf-cart-utils';
 import { toast } from 'sonner';
 
 interface GolfCartInspectionFormProps {
   properties: string[];
+  initialData?: Partial<GolfCartFormData>;
+  isGuestMode?: boolean;
+  inspectionId?: string;
 }
 
-export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ properties }) => {
+export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
+  properties, 
+  initialData = {}, 
+  isGuestMode = false,
+  inspectionId 
+}) => {
   const formRef = useRef<HTMLFormElement>(null);
+  const signaturePadRef = useRef<HTMLCanvasElement>(null);
+  const [signaturePad, setSignaturePad] = useState<SignaturePad | null>(null);
+
   const [formData, setFormData] = useState<GolfCartFormData>({
-    // Sección 1: Guest Basic Information
-    property: '',
-    cartNumber: '',
-    inspectionDate: new Date().toISOString().split('T')[0],
-    guestName: '',
-    guestEmail: '',
-    guestPhone: '',
-
-    // Sección 2: Damages List
-    damageRecords: [],
-
-    // Sección 3: Guest Exclusive Fields
-    previewObservationsByGuest: '',
-    acceptInspectionTerms: false,
-    guestSignature: null,
-
-    // Campos adicionales
-    golfcartinspectionsend: false
+    property: initialData.property || '',
+    cartNumber: initialData.cartNumber || '',
+    inspectionDate: initialData.inspectionDate || new Date().toISOString().split('T')[0],
+    guestName: initialData.guestName || '',
+    guestEmail: initialData.guestEmail || '',
+    guestPhone: initialData.guestPhone || '',
+    damageRecords: initialData.damageRecords || [],
+    previewObservationsByGuest: initialData.previewObservationsByGuest || '',
+    acceptInspectionTerms: initialData.acceptInspectionTerms || false,
+    guestSignature: initialData.guestSignature || null,
+    golfCartInspectionSend: false
   });
 
   const [errors, setErrors] = useState<FormValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  useEffect(() => {
+    if (signaturePadRef.current) {
+      const pad = new SignaturePad(signaturePadRef.current, {
+        backgroundColor: 'rgba(255, 255, 255, 1)',
+        penColor: 'rgb(0, 0, 0)',
+        minWidth: 1,
+        maxWidth: 3,
+        throttle: 16
+      });
+
+      setSignaturePad(pad);
+
+      const resizeCanvas = () => {
+        if (signaturePadRef.current) {
+          const canvas = signaturePadRef.current;
+          const ratio = Math.max(window.devicePixelRatio || 1, 1);
+          canvas.width = canvas.offsetWidth * ratio;
+          canvas.height = canvas.offsetHeight * ratio;
+          canvas.getContext('2d')?.scale(ratio, ratio);
+          pad.clear(); 
+        }
+      };
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      return () => {
+        window.removeEventListener('resize', resizeCanvas);
+        pad.off();
+      };
+    }
+  }, []);
+
+  const clearSignature = () => {
+    signaturePad?.clear();
+    setFormData(prev => ({ ...prev, guestSignature: null }));
+  };
+
+  const saveSignature = () => {
+    if (signaturePad && !signaturePad.isEmpty()) {
+      const signatureDataUrl = signaturePad.toDataURL('image/png');
+      setFormData(prev => ({ ...prev, guestSignature: signatureDataUrl }));
+      toast.success('Firma guardada', {
+        description: 'La firma se ha guardado correctamente',
+        duration: 2000
+      });
+    } else {
+      toast.error('Firma inválida', {
+        description: 'Por favor, firme en el área designada',
+        duration: 2000
+      });
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -56,7 +115,6 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
         : value
     }));
 
-    // Clear specific field error when user starts typing
     if (errors[name as keyof FormValidationErrors]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -103,7 +161,15 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
     setSubmitError(null);
     setIsSubmitting(true);
 
-    // Validate form
+    if (!formData.guestSignature) {
+      toast.error('Please provide a signature', {
+        duration: 3000,
+        position: 'top-center'
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
     const validationErrors = validateGolfCartForm(formData);
     
     if (hasFormErrors(validationErrors)) {
@@ -112,63 +178,103 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
       return;
     }
 
-    try {
-      // Generación de PDF
-      let pdfBase64 = '';
+    if (isGuestMode && inspectionId) {
       try {
-        pdfBase64 = generatePDF(formData);
-        console.log('PDF Generado:', {
-          length: pdfBase64.length,
-          prefix: pdfBase64.substring(0, 50) + '...'
+        const response = await fetch('/api/guest-submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...formData,
+            inspectionId,
+            golfCartSignatureChecked: true
+          })
         });
+
+        if (response.ok) {
+          toast.success('Inspection Submitted Successfully', {
+            description: 'Your golf cart inspection form has been processed.',
+            duration: 5000,
+            position: 'top-center'
+          });
+          setSubmitSuccess(true);
+        } else {
+          toast.error('Submission failed', {
+            description: response.statusText || 'Please try again.',
+            duration: 5000,
+            position: 'top-center'
+          });
+          setSubmitError(response.statusText || 'Submission failed');
+        }
       } catch (error) {
-        console.error('Error generando PDF:', error);
-        // Manejar el error de generación de PDF
-        return;
-      }
-
-      const formDataToSubmit = {
-        ...formData,
-        pdfBase64,
-        inspectionDate: new Date().toISOString().split('T')[0],
-        cartNumber: Number(formData.cartNumber)
-      };
-
-      const response = await fetch('/api/submit-form', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formDataToSubmit)
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success('Inspection Submitted Successfully', {
-          description: 'Your golf cart inspection form has been processed.',
+        console.error('Submission error:', error);
+        toast.error('An unexpected error occurred', {
+          description: 'Please try again later.',
           duration: 5000,
           position: 'top-center'
         });
-        setSubmitSuccess(true);
-      } else {
-        toast.error('Submission failed', {
-          description: result.error || 'Please try again.',
+        setSubmitError('An unexpected error occurred');
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      try {
+        let pdfBase64 = '';
+        try {
+          pdfBase64 = generatePDF(formData);
+          console.log('PDF Generado:', {
+            length: pdfBase64.length,
+            prefix: pdfBase64.substring(0, 50) + '...'
+          });
+        } catch (error) {
+          console.error('Error generando PDF:', error);
+          return;
+        }
+
+        const formDataToSubmit = {
+          ...formData,
+          pdfBase64,
+          inspectionDate: new Date().toISOString().split('T')[0],
+          cartNumber: Number(formData.cartNumber)
+        };
+
+        const response = await fetch('/api/submit-form', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formDataToSubmit)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          toast.success('Inspection Submitted Successfully', {
+            description: 'Your golf cart inspection form has been processed.',
+            duration: 5000,
+            position: 'top-center'
+          });
+          setSubmitSuccess(true);
+        } else {
+          toast.error('Submission failed', {
+            description: result.error || 'Please try again.',
+            duration: 5000,
+            position: 'top-center'
+          });
+          setSubmitError(result.error || 'Submission failed');
+        }
+      } catch (error) {
+        console.error('Submission error:', error);
+        toast.error('An unexpected error occurred', {
+          description: 'Please try again later.',
           duration: 5000,
           position: 'top-center'
         });
-        setSubmitError(result.error || 'Submission failed');
+        setSubmitError('An unexpected error occurred');
+      } finally {
+        setIsSubmitting(false);
       }
-    } catch (error) {
-      console.error('Submission error:', error);
-      toast.error('An unexpected error occurred', {
-        description: 'Please try again later.',
-        duration: 5000,
-        position: 'top-center'
-      });
-      setSubmitError('An unexpected error occurred');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -202,9 +308,7 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
 
       <h2 className="text-2xl font-bold mb-6 text-center">Golf Cart Inspection Form</h2>
 
-      {/* Cart Number Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Property Select */}
         <div>
           <label htmlFor="property" className="block text-gray-700 font-bold mb-2">
             Property <span className="text-red-500">*</span>
@@ -216,6 +320,7 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
+            disabled={isGuestMode}
           >
             <option value="">Select Property</option>
             {properties.map((prop) => (
@@ -227,7 +332,6 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
           {errors.property && <p className="text-red-500 text-sm mt-1">{errors.property}</p>}
         </div>
 
-        {/* Cart Number Input */}
         <div>
           <label htmlFor="cartNumber" className="block text-gray-700 font-bold mb-2">
             Golf Cart Number <span className="text-red-500">*</span>
@@ -240,12 +344,12 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             required
+            disabled={isGuestMode}
           />
           {errors.cartNumber && <p className="text-red-500 text-sm mt-1">{errors.cartNumber}</p>}
         </div>
       </div>
 
-      {/* Inspection Date Section */}
       <div className="mt-4">
         <label htmlFor="inspectionDate" className="block text-gray-700 font-bold mb-2">
           Inspection Date <span className="text-red-500">*</span>
@@ -258,13 +362,12 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
           onChange={handleChange}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           required
+          disabled={isGuestMode}
         />
         {errors.inspectionDate && <p className="text-red-500 text-sm mt-1">{errors.inspectionDate}</p>}
       </div>
 
-      {/* Guest Information Section */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Guest Name */}
         <div>
           <label htmlFor="guestName" className="block text-gray-700 font-bold mb-2">
             Guest Name
@@ -278,13 +381,13 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             className={`w-full px-3 py-2 border rounded-lg ${
               errors.guestName ? 'border-red-500' : 'border-gray-300'
             }`}
+            disabled={isGuestMode}
           />
           {errors.guestName && (
             <p className="text-red-500 text-sm mt-1">{errors.guestName}</p>
           )}
         </div>
 
-        {/* Guest Email */}
         <div>
           <label htmlFor="guestEmail" className="block text-gray-700 font-bold mb-2">
             Guest Email
@@ -298,13 +401,13 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             className={`w-full px-3 py-2 border rounded-lg ${
               errors.guestEmail ? 'border-red-500' : 'border-gray-300'
             }`}
+            disabled={isGuestMode}
           />
           {errors.guestEmail && (
             <p className="text-red-500 text-sm mt-1">{errors.guestEmail}</p>
           )}
         </div>
 
-        {/* Guest Phone */}
         <div>
           <label htmlFor="guestPhone" className="block text-gray-700 font-bold mb-2">
             Guest Phone (Optional)
@@ -316,21 +419,21 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             value={formData.guestPhone}
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            disabled={isGuestMode}
           />
         </div>
       </div>
 
-      {/* Damage Records Section */}
       <div className="mb-6 p-4 border rounded-lg">
         <h3 className="text-lg font-semibold mb-4">Damage Records</h3>
         {(formData.damageRecords || []).map((record, index) => (
           <div key={index} className="grid grid-cols-4 gap-2 items-center mb-2">
-            {/* Section Select */}
             <select
               name={`damageRecords.${index}.section`}
               value={record.section}
               onChange={(e) => updateDamageRecord(index, 'section', e.target.value)}
               className="col-span-1 px-2 py-1 border rounded"
+              disabled={isGuestMode}
             >
               {INSPECTION_SECTIONS.map((section) => (
                 <option key={section} value={section}>
@@ -339,12 +442,12 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
               ))}
             </select>
 
-            {/* Damage Type Select */}
             <select
               name={`damageRecords.${index}.damageType`}
               value={record.damageType}
               onChange={(e) => updateDamageRecord(index, 'damageType', e.target.value)}
               className="col-span-1 px-2 py-1 border rounded"
+              disabled={isGuestMode}
             >
               {DAMAGE_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -353,7 +456,6 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
               ))}
             </select>
 
-            {/* Quantity Input */}
             <input
               type="number"
               name={`damageRecords.${index}.quantity`}
@@ -361,34 +463,33 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
               onChange={(e) => updateDamageRecord(index, 'quantity', parseInt(e.target.value, 10))}
               className="col-span-1 px-2 py-1 border rounded"
               min="0"
+              disabled={isGuestMode}
             />
 
-            {/* Remove Damage Record Button */}
             <button
               type="button"
               onClick={() => removeDamageRecord(index)}
               className="col-span-1 text-red-500 hover:text-red-700"
+              disabled={isGuestMode}
             >
               <TrashIcon className="w-5 h-5" />
             </button>
           </div>
         ))}
 
-        {/* Add Damage Record Button */}
         <button
           type="button"
           onClick={addDamageRecord}
           className="mt-4 w-full flex items-center justify-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+          disabled={isGuestMode}
         >
           <PlusIcon className="w-5 h-5 mr-2" /> Add Damage Record
         </button>
       </div>
 
-      {/* Guest Section */}
       <div className="mb-6 p-4 border rounded-lg">
         <h3 className="text-lg font-semibold mb-4">Guest Section</h3>
 
-        {/* Preview Observations */}
         <div className="mb-4">
           <label htmlFor="previewObservationsByGuest" className="block text-gray-700 font-bold mb-2">
             Guest Observations (Optional)
@@ -401,10 +502,10 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             rows={3}
             placeholder="Enter any additional observations"
+            disabled={!isGuestMode}
           />
         </div>
 
-        {/* Inspection Terms Checkbox */}
         <div className="mb-4">
           <label className="flex items-center">
             <input
@@ -413,6 +514,7 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
               checked={formData.acceptInspectionTerms}
               onChange={handleChange}
               className="mr-2"
+              disabled={!isGuestMode}
             />
             <span className="text-gray-700">
               I accept the terms of the golf cart inspection
@@ -420,28 +522,52 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
           </label>
         </div>
 
-        {/* Guest Signature Section */}
-        <div>
-          <label htmlFor="guestSignature" className="block text-gray-700 font-bold mb-2">
-            Guest Signature
+        <div className="mt-4">
+          <label className="block text-gray-700 font-bold mb-2">
+            Guest Signature <span className="text-red-500">*</span>
           </label>
           <div className="border border-gray-300 rounded-lg p-2">
             <canvas 
-              id="signatureCanvas" 
-              width="100%" 
-              height="200" 
-              className="w-full h-[200px] bg-white border border-gray-300 rounded"
-            >
-              Your browser does not support canvas. Please use a modern browser.
-            </canvas>
+              ref={signaturePadRef} 
+              className="w-full h-40 bg-white"
+              style={{ touchAction: 'none' }}
+            />
           </div>
+          <div className="flex justify-between mt-2">
+            <button 
+              type="button" 
+              onClick={clearSignature}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+              disabled={!isGuestMode}
+            >
+              <XIcon size={16} /> Limpiar
+            </button>
+            <button 
+              type="button" 
+              onClick={saveSignature}
+              className="bg-green-500 text-white px-4 py-2 rounded-lg"
+              disabled={!isGuestMode}
+            >
+              Guardar Firma
+            </button>
+          </div>
+          
+          {formData.guestSignature && (
+            <div className="mt-4">
+              <p className="text-sm text-gray-600 mb-2">Vista previa de la firma:</p>
+              <img 
+                src={formData.guestSignature} 
+                alt="Firma del invitado" 
+                className="max-h-24 border rounded-lg"
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Submit Button */}
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || !isGuestMode}
         className={`w-full py-3 rounded-lg text-white font-bold ${
           isSubmitting 
             ? 'bg-gray-400 cursor-not-allowed' 
@@ -451,7 +577,6 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
         {isSubmitting ? 'Submitting...' : 'Submit Inspection'}
       </button>
 
-      {/* Error Message */}
       {submitError && (
         <div className="mt-4 text-center text-red-500">
           {submitError}

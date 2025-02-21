@@ -27,3 +27,8 @@ yarn-error.log*
 next-env.d.ts
 # Local Netlify folder
 .netlify
+
+# Directorios generados automáticamente
+**/forms/
+**/formulario/
+.history/

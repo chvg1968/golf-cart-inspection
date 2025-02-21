@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { generatePDF, generatePDFLink, mapFormDataToAirtable, generateInspectionId, generateSignatureLink } from '@/components/form/golf-cart-utils';
+import { generatePDF, generatePDFLink, mapFormDataToAirtable, generateInspectionId, generateSignatureLink, generateSignatureConfirmLink } from '@/components/form/golf-cart-utils';
 import { createAirtableRecord } from './airtable-service';
 import { FieldSet } from './airtable-service';
 import { NextRequest, NextResponse } from 'next/server';
@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
       });
 
       const signatureLink = generateSignatureLink(inspectionId);
+      const signatureConfirmLink = generateSignatureConfirmLink(inspectionId);
 
       const INSPECTION_EMAIL = process.env.EMAIL_USER || 'conradovilla@hotmail.com';
       const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://golfcartinsp.netlify.app/';
@@ -113,11 +114,7 @@ export async function POST(req: NextRequest) {
             <li>Include your Inspection ID: <code>${inspectionId}</code> in the email subject</li>
           </ol>
           
-          <p>After sending the signed PDF, please confirm the signature here: 
-            <a href="${APP_URL.replace(/\/+$/, '')}/signature-confirm">Confirm Signature</a>
-          </p>
-          
-          <p>To complete the digital confirmation, please <a href="${signatureLink}">click here to acknowledge the inspection</a>.</p>
+          <p>After sending the signed PDF, please <a href="${signatureConfirmLink}">click here to confirm your signature</a>.</p>
           
           <p>If you have any questions, please contact us.</p>
         `,

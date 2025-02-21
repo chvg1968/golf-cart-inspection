@@ -241,3 +241,24 @@ export const generateSignatureLink = (inspectionId: string): string => {
   
   return `${cleanBaseUrl}/signature/${inspectionId}`;
 };
+
+export const generateSignatureConfirmLink = (inspectionId: string): string => {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://golfcartinsp.netlify.app/';
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+  
+  // Generar un token único basado en el Inspection ID
+  const token = generateUniqueToken(inspectionId);
+  
+  return `${cleanBaseUrl}/signature-confirm/${inspectionId}/${token}`;
+};
+
+// Función auxiliar para generar un token único
+const generateUniqueToken = (inspectionId: string): string => {
+  // Implementación simple de generación de token
+  const crypto = require('crypto');
+  return crypto
+    .createHash('sha256')
+    .update(`${inspectionId}-signature-confirm`)
+    .digest('hex')
+    .slice(0, 16);
+};

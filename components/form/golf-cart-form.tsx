@@ -116,14 +116,15 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
       // Generación de PDF
       let pdfBase64 = '';
       try {
-        pdfBase64 = await generatePDF(formRef);
+        pdfBase64 = generatePDF(formData);
         console.log('PDF Generado:', {
           length: pdfBase64.length,
           prefix: pdfBase64.substring(0, 50) + '...'
         });
-      } catch (pdfError) {
-        console.error('Error generando PDF:', pdfError);
-        toast.warning('PDF generation failed, continuing without PDF');
+      } catch (error) {
+        console.error('Error generando PDF:', error);
+        // Manejar el error de generación de PDF
+        return;
       }
 
       const formDataToSubmit = {
@@ -201,21 +202,20 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
 
       <h2 className="text-2xl font-bold mb-6 text-center">Golf Cart Inspection Form</h2>
 
-      {/* Basic Information Section */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      {/* Cart Number Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Property Select */}
         <div>
           <label htmlFor="property" className="block text-gray-700 font-bold mb-2">
-            Property
+            Property <span className="text-red-500">*</span>
           </label>
           <select
             id="property"
             name="property"
             value={formData.property}
             onChange={handleChange}
-            className={`w-full px-3 py-2 border rounded-lg ${
-              errors.property ? 'border-red-500' : 'border-gray-300'
-            }`}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            required
           >
             <option value="">Select Property</option>
             {properties.map((prop) => (
@@ -224,31 +224,46 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
               </option>
             ))}
           </select>
-          {errors.property && (
-            <p className="text-red-500 text-sm mt-1">{errors.property}</p>
-          )}
+          {errors.property && <p className="text-red-500 text-sm mt-1">{errors.property}</p>}
         </div>
 
-        {/* Cart Number */}
+        {/* Cart Number Input */}
         <div>
           <label htmlFor="cartNumber" className="block text-gray-700 font-bold mb-2">
-            Cart Number
+            Golf Cart Number <span className="text-red-500">*</span>
           </label>
           <input
-            type="number"
+            type="text"
             id="cartNumber"
             name="cartNumber"
             value={formData.cartNumber}
             onChange={handleChange}
-            className={`w-full px-3 py-2 border rounded-lg ${
-              errors.cartNumber ? 'border-red-500' : 'border-gray-300'
-            }`}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            required
           />
-          {errors.cartNumber && (
-            <p className="text-red-500 text-sm mt-1">{errors.cartNumber}</p>
-          )}
+          {errors.cartNumber && <p className="text-red-500 text-sm mt-1">{errors.cartNumber}</p>}
         </div>
+      </div>
 
+      {/* Inspection Date Section */}
+      <div className="mt-4">
+        <label htmlFor="inspectionDate" className="block text-gray-700 font-bold mb-2">
+          Inspection Date <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="date"
+          id="inspectionDate"
+          name="inspectionDate"
+          value={formData.inspectionDate}
+          onChange={handleChange}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          required
+        />
+        {errors.inspectionDate && <p className="text-red-500 text-sm mt-1">{errors.inspectionDate}</p>}
+      </div>
+
+      {/* Guest Information Section */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Guest Name */}
         <div>
           <label htmlFor="guestName" className="block text-gray-700 font-bold mb-2">
@@ -405,13 +420,20 @@ export const GolfCartInspectionForm: React.FC<GolfCartInspectionFormProps> = ({ 
           </label>
         </div>
 
-        {/* Guest Signature (Placeholder) */}
+        {/* Guest Signature Section */}
         <div>
-          <label className="block text-gray-700 font-bold mb-2">
-            Guest Signature (To be implemented)
+          <label htmlFor="guestSignature" className="block text-gray-700 font-bold mb-2">
+            Guest Signature
           </label>
-          <div className="border rounded p-4 text-center text-gray-500 bg-gray-100">
-            Signature capture will be added in future updates
+          <div className="border border-gray-300 rounded-lg p-2">
+            <canvas 
+              id="signatureCanvas" 
+              width="100%" 
+              height="200" 
+              className="w-full h-[200px] bg-white border border-gray-300 rounded"
+            >
+              Your browser does not support canvas. Please use a modern browser.
+            </canvas>
           </div>
         </div>
       </div>

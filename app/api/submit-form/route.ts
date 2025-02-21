@@ -1,202 +1,202 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import AirtableLib, { FieldSet, Attachment, Record as AirtableRecord } from 'airtable';
+import { generatePDF, generatePDFLink, mapFormDataToAirtable, generateInspectionId, generateSignatureLink } from '@/components/form/golf-cart-utils';
+import { createAirtableRecord } from './airtable-service';
+import { FieldSet } from './airtable-service';
+import { NextRequest, NextResponse } from 'next/server';
 import { 
-  GolfCartFormData,
-  AirtableFields
+  GolfCartFormData
 } from '../../../components/form';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Verificar variables de entorno
+    // Validar clave de Resend
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
-    const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-    const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-    const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME;
-
     if (!RESEND_API_KEY) {
       throw new Error('Resend API key is not configured');
     }
 
-    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_NAME) {
-      throw new Error('Airtable configuration is incomplete');
-    }
-
     const formData: GolfCartFormData = await req.json();
-    const resend = new Resend(RESEND_API_KEY);
-    const base = new AirtableLib({ apiKey: AIRTABLE_API_KEY })
-      .base(AIRTABLE_BASE_ID);
-    const table = base(AIRTABLE_TABLE_NAME);
 
-    // Generar Inspection ID único
-    const inspectionId = uuidv4();
+    // Validaciones de datos con tipado seguro
+    const requiredFields: (keyof GolfCartFormData)[] = ['property', 'cartNumber', 'guestEmail'];
+    const missingFields = requiredFields.filter(field => {
+      const value = formData[field];
+      return value === undefined || value === null || value === '';
+    });
 
-    // Asegurar que cartNumber sea un número
-    const cartNumber = typeof formData.cartNumber === 'string'
-      ? parseInt(formData.cartNumber, 10)
-      : formData.cartNumber;
-
-    // Validar que sea un número válido
-    if (isNaN(cartNumber)) {
+    if (missingFields.length > 0) {
       return NextResponse.json({
-        success: false,
-        error: 'Invalid cart number'
+        error: 'Missing required fields',
+        missingFields
       }, { status: 400 });
     }
 
-    // Formatear registros de daños como string para referencia
-    const damageRecordsString = formData.damageRecords && formData.damageRecords.length > 0
-      ? formData.damageRecords.map(record => 
-          `Section: ${record.section}, Type: ${record.damageType}, Quantity: ${record.quantity}`
-        ).join(' | ')
-      : '';
+    // Generar PDF
+    const pdfBase64 = generatePDF(formData);
+    const pdfLink = await generatePDFLink(pdfBase64, formData);
 
-    // Separar el PDF de los datos de Airtable
-    const { pdfBase64, ...airtableData } = formData;
-
-    // Crear registro en Airtable sin el PDF
-    const airtableRecord = mapFormDataToAirtable(airtableData);
-
-    let recordId = null;
-    try {
-      const record = await table.create(airtableRecord);
-      recordId = record.id;
-      console.log('Airtable Record Created:', recordId);
-    } catch (airtableError) {
-      console.error('Airtable Creation Error:', airtableError);
-      throw new Error('Failed to create Airtable record');
-    }
-
-    // Diagnóstico detallado de PDF
-    console.log('PDF Base64 Debugging:', {
-      pdfOriginal: pdfBase64 ? pdfBase64.substring(0, 100) + '...' : 'No PDF',
-      pdfOriginalLength: pdfBase64 ? pdfBase64.length : 0,
-      pdfOriginalType: pdfBase64 ? pdfBase64.split(',')[0] : 'N/A'
+    console.error(' PDF Link Generation:', {
+      pdfLink,
+      linkLength: pdfLink.length
     });
 
-    // Preparar datos para email
-    const pdfBase64Clean = pdfBase64 
-      ? pdfBase64.split(',')[1] // Obtener solo la parte base64
-      : null;
-
-    console.log('PDF Base64 Clean Debugging:', {
-      pdfClean: pdfBase64Clean ? pdfBase64Clean.substring(0, 100) + '...' : 'No Clean PDF',
-      pdfCleanLength: pdfBase64Clean ? pdfBase64Clean.length : 0
+    console.error(' PDF Attachment Debug:', {
+      base64Length: pdfBase64.length,
+      base64Prefix: pdfBase64.substring(0, 50) + '...',
+      pdfLinkLength: pdfLink.length,
+      pdfLinkPrefix: pdfLink.substring(0, 50) + '...'
     });
 
-    const emailPayload = {
-      from: 'noreply@resend.dev',
-      to: formData.guestEmail,
-      subject: `Golf Cart Inspection Report - Cart #${cartNumber}`,
-      html: `
-        <h2>Golf Cart Inspection Form</h2>
-        <p>Dear ${formData.guestName},</p>
-        <p>Thank you for completing the golf cart inspection form.</p>
-        <p>Inspection Details:</p>
-        <ul>
-          <li>Inspection ID: ${inspectionId}</li>
-          <li>Property: ${formData.property}</li>
-          <li>Cart Number: ${cartNumber}</li>
-          <li>Inspection Date: ${formData.inspectionDate || new Date().toISOString().split('T')[0]}</li>
-        </ul>
-        ${formData.damageRecords && formData.damageRecords.length > 0 ? `
-          <h3>Damage Records:</h3>
-          <ul>
-            ${formData.damageRecords.map(record => 
-              `<li>${record.section}: ${record.damageType} (Qty: ${record.quantity})</li>`
-            ).join('')}
-          </ul>
-        ` : ''}
-        ${formData.previewObservationsByGuest ? `
-          <h3>Guest Observations:</h3>
-          <p>${formData.previewObservationsByGuest}</p>
-        ` : ''}
-        ${pdfBase64 ? `
-          <p>Please review the attached PDF.</p>
-        ` : ''}
-        <p>Best regards,<br>Luxe Properties Inspection Team</p>
-      `,
-      attachments: pdfBase64Clean ? [
-        {
-          filename: `golf-cart-inspection-${cartNumber}-${inspectionId}.pdf`,
-          content: Buffer.from(pdfBase64Clean, 'base64'),
-          contentType: 'application/pdf'
-        }
-      ] : []
+    // Extraer solo el contenido base64 sin el prefijo data URI
+    const pdfContent = pdfBase64.split(',')[1];
+
+    console.error(' Email Attachment Payload:', {
+      filename: `golf-cart-inspection-${formData.cartNumber}.pdf`,
+      contentLength: pdfContent.length
+    });
+
+    // Generar Inspection ID
+    const inspectionId = generateInspectionId(formData);
+
+    // Preparar datos para Airtable con Inspection ID
+    const airtableRecord = {
+      ...mapFormDataToAirtable(formData),
+      'Inspection ID': inspectionId,
+      'Golf Cart Inspection Send': true
     };
 
-    // Log de estado final de adjuntos
-    console.log('Email Attachments Debugging:', {
-      hasAttachments: !!emailPayload.attachments.length,
-      attachmentFilename: emailPayload.attachments.length ? emailPayload.attachments[0].filename : 'N/A',
-      attachmentSize: emailPayload.attachments.length ? emailPayload.attachments[0].content.length : 0
-    });
+    // Crear registro en Airtable
+    const recordResponse = await createAirtableRecord(airtableRecord);
 
-    let emailResponse = null;
+    // Enviar correo con enlace de PDF
     try {
-      // Enviar email
-      emailResponse = await resend.emails.send(emailPayload);
+      // Validar API Key de Resend
+      if (!RESEND_API_KEY) {
+        throw new Error('Resend API key is missing or invalid');
+      }
 
-      // Log de respuesta de correo
-      console.log('Email Response:', JSON.stringify(emailResponse, null, 2));
-
-      // Verificar campos obligatorios
-      if (!emailPayload.to) {
-        throw new Error('Email destinatario es obligatorio');
-      }
-      if (!emailPayload.from) {
-        throw new Error('Email remitente es obligatorio');
-      }
-      if (!emailPayload.subject) {
-        throw new Error('Asunto del correo es obligatorio');
-      }
-    } catch (emailError) {
-      // Log detallado de errores de correo
-      console.error('Email Send Error:', emailError);
+      const resend = new Resend(RESEND_API_KEY);
       
-      // No lanzar error para permitir que la solicitud continúe
-      console.warn('Email could not be sent, but form submission will proceed');
+      // Validar email del destinatario
+      if (!formData.guestEmail || !formData.guestEmail.includes('@')) {
+        throw new Error('Invalid guest email address');
+      }
+
+      console.error(' Resend Email Configuration:', {
+        apiKeyPresent: !!RESEND_API_KEY,
+        sender: 'hello@resend.dev',
+        recipient: formData.guestEmail
+      });
+
+      const signatureLink = generateSignatureLink(inspectionId);
+
+      const INSPECTION_EMAIL = process.env.EMAIL_USER || 'conradovilla@hotmail.com';
+      const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://golfcartinsp.netlify.app/';
+
+      const emailPayload = {
+        from: 'Golf Cart Inspection <hello@resend.dev>',
+        to: [formData.guestEmail],
+        subject: `Golf Cart Inspection Report - Cart #${formData.cartNumber}`,
+        html: `
+          <h1>Golf Cart Inspection Report</h1>
+          <p>Dear ${formData.guestName || 'Guest'},</p>
+          
+          <p>Please review the attached Golf Cart Inspection Report.</p>
+          
+          <h2>Next Steps:</h2>
+          <ol>
+            <li>Review the attached PDF carefully</li>
+            <li>Sign the document physically</li>
+            <li>Send the signed PDF to: <strong>${INSPECTION_EMAIL}</strong></li>
+            <li>Include your Inspection ID: <code>${inspectionId}</code> in the email subject</li>
+          </ol>
+          
+          <p>After sending the signed PDF, please confirm the signature here: 
+            <a href="${APP_URL.replace(/\/+$/, '')}/signature-confirm">Confirm Signature</a>
+          </p>
+          
+          <p>To complete the digital confirmation, please <a href="${signatureLink}">click here to acknowledge the inspection</a>.</p>
+          
+          <p>If you have any questions, please contact us.</p>
+        `,
+        attachments: [
+          {
+            filename: `golf-cart-inspection-${formData.cartNumber}.pdf`,
+            content: pdfContent,
+            contentType: 'application/pdf'
+          }
+        ]
+      };
+
+      console.error(' Email Payload Details:', {
+        recipients: emailPayload.to,
+        subject: emailPayload.subject,
+        attachmentSize: emailPayload.attachments[0].content.length
+      });
+
+      try {
+        const emailResponse = await resend.emails.send(emailPayload);
+        
+        console.error(' Email Sent Response:', {
+          responseId: emailResponse.data?.id,
+          success: !!emailResponse.data,
+          fullResponse: JSON.stringify(emailResponse, null, 2)
+        });
+
+        console.error(' Resend Full Response:', {
+          data: emailResponse.data,
+          error: emailResponse.error
+        });
+
+        if (emailResponse.error) {
+          throw new Error(emailResponse.error.message);
+        }
+
+        return NextResponse.json({
+          success: true,
+          recordId: recordResponse.id,
+          inspectionId: inspectionId,
+          emailId: emailResponse.data?.id || null,
+          processingTime: Date.now() - startTime,
+          pdfLink
+        });
+
+      } catch (resendError) {
+        console.error(' Resend Email Sending Error:', {
+          message: resendError instanceof Error ? resendError.message : 'Unknown error',
+          name: resendError instanceof Error ? resendError.name : 'Unknown',
+          stack: resendError instanceof Error ? resendError.stack : 'No stack trace'
+        });
+
+        return NextResponse.json({ 
+          error: 'Email sending failed', 
+          details: resendError instanceof Error ? resendError.message : 'Unknown error',
+          payload: {
+            to: formData.guestEmail,
+            subject: `Golf Cart Inspection Report - Cart #${formData.cartNumber}`
+          }
+        }, { status: 500 });
+      }
+    } catch (generalError) {
+      console.error(' General Email Configuration Error:', {
+        message: generalError instanceof Error ? generalError.message : 'Unknown error',
+        name: generalError instanceof Error ? generalError.name : 'Unknown',
+        stack: generalError instanceof Error ? generalError.stack : 'No stack trace'
+      });
+
+      return NextResponse.json({ 
+        error: 'Email configuration failed', 
+        details: generalError instanceof Error ? generalError.message : 'Unknown error' 
+      }, { status: 500 });
     }
 
-    // Actualizar registro para marcar como enviado
-    await new Promise<void>((resolve, reject) => {
-      table.update(recordId, {
-        'Golf Cart Inspection Send': true
-      }, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    return NextResponse.json({
-      success: true,
-      recordId: recordId,
-      inspectionId: inspectionId,
-      emailId: emailResponse?.data?.id || null,
-      processingTime: Date.now() - startTime
-    });
-
   } catch (error) {
-    console.error('Form submission error:', error);
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+    console.error('Submission error:', error);
+    return NextResponse.json({ 
+      error: 'Submission failed', 
+      details: error instanceof Error ? error.message : 'Unknown error' 
     }, { status: 500 });
   }
-}
-
-function mapFormDataToAirtable(formData: GolfCartFormData): Partial<FieldSet> {
-  return {
-    'Inspection ID': uuidv4(),
-    'Property': formData.property,
-    'Golf Cart Number': formData.cartNumber,
-    'Inspection Date': formData.inspectionDate || new Date().toISOString().split('T')[0],
-    'Guest Name': formData.guestName,
-    'Guest Email': formData.guestEmail,
-    'Guest Phone': formData.guestPhone || '',
-    'Golf Cart Inspection Send': false
-  };
 }

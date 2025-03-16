@@ -155,6 +155,10 @@ const setupDraggableMarkers = () => {
         const target = event.target as HTMLElement
         target.style.transition = 'none'
         target.style.cursor = 'grabbing'
+        
+        // Almacenar posición inicial
+        target.dataset.initialX = target.style.left
+        target.dataset.initialY = target.style.top
       },
       move(event) {
         const target = event.target as HTMLElement
@@ -162,20 +166,29 @@ const setupDraggableMarkers = () => {
         if (!container) return
 
         const containerRect = container.getBoundingClientRect()
+        
+        // Usar offsetWidth y offsetHeight para mayor precisión
+        const containerWidth = container.offsetWidth
+        const containerHeight = container.offsetHeight
 
-        // Calcular posición porcentual con mayor precisión
-        const x = ((event.clientX - containerRect.left) / containerRect.width) * 100
-        const y = ((event.clientY - containerRect.top) / containerRect.height) * 100
+        // Calcular posición relativa con mayor precisión
+        const relativeX = event.clientX - containerRect.left
+        const relativeY = event.clientY - containerRect.top
 
-        // Limitar el movimiento dentro del contenedor con mayor suavidad
+        // Calcular porcentajes con redondeo
+        const x = Math.round((relativeX / containerWidth) * 10000) / 100
+        const y = Math.round((relativeY / containerHeight) * 10000) / 100
+
+        // Limitar el movimiento dentro del contenedor
         const clampedX = Math.max(0, Math.min(100, x))
         const clampedY = Math.max(0, Math.min(100, y))
 
-        // Actualizar posición visual con transformación
-        target.style.transform = `translate(
-          calc(${clampedX}% - 50%), 
-          calc(${clampedY}% - 50%)
-        )`
+        // Actualizar posición visual
+        target.style.left = `${clampedX}%`
+        target.style.top = `${clampedY}%`
+
+        // Añadir transformación para centrar
+        target.style.transform = `translate(-50%, -50%)`
 
         // Emitir actualización de posición
         const index = parseInt(target.dataset.index || '0')

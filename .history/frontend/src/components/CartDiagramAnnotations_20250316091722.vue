@@ -156,9 +156,13 @@ const setupDraggableMarkers = () => {
         target.style.transition = 'none'
         target.style.cursor = 'grabbing'
         
-        // Almacenar posición inicial
-        target.dataset.initialX = target.style.left
-        target.dataset.initialY = target.style.top
+        // Añadir console log para depuración
+        console.log('Drag Start - Initial Position:', {
+          x: target.style.left,
+          y: target.style.top,
+          dataX: target.dataset.x,
+          dataY: target.dataset.y
+        })
       },
       move(event) {
         const target = event.target as HTMLElement
@@ -166,29 +170,34 @@ const setupDraggableMarkers = () => {
         if (!container) return
 
         const containerRect = container.getBoundingClientRect()
-        
-        // Usar offsetWidth y offsetHeight para mayor precisión
-        const containerWidth = container.offsetWidth
-        const containerHeight = container.offsetHeight
+        const containerWidth = containerRect.width
+        const containerHeight = containerRect.height
 
-        // Calcular posición relativa con mayor precisión
-        const relativeX = event.clientX - containerRect.left
-        const relativeY = event.clientY - containerRect.top
+        // Calcular posición porcentual con mayor precisión
+        const x = ((event.clientX - containerRect.left) / containerWidth) * 100
+        const y = ((event.clientY - containerRect.top) / containerHeight) * 100
 
-        // Calcular porcentajes con redondeo
-        const x = Math.round((relativeX / containerWidth) * 10000) / 100
-        const y = Math.round((relativeY / containerHeight) * 10000) / 100
-
-        // Limitar el movimiento dentro del contenedor
+        // Limitar el movimiento dentro del contenedor con mayor suavidad
         const clampedX = Math.max(0, Math.min(100, x))
         const clampedY = Math.max(0, Math.min(100, y))
 
-        // Actualizar posición visual
-        target.style.left = `${clampedX}%`
-        target.style.top = `${clampedY}%`
+        // Actualizar posición visual con transformación
+        target.style.transform = `translate(
+          calc(${clampedX}% - 50%), 
+          calc(${clampedY}% - 50%)
+        )`
 
-        // Añadir transformación para centrar
-        target.style.transform = `translate(-50%, -50%)`
+        // Añadir console log para depuración
+        console.log('Drag Move - Calculated Position:', {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          containerLeft: containerRect.left,
+          containerTop: containerRect.top,
+          containerWidth,
+          containerHeight,
+          calculatedX: clampedX,
+          calculatedY: clampedY
+        })
 
         // Emitir actualización de posición
         const index = parseInt(target.dataset.index || '0')
@@ -202,6 +211,12 @@ const setupDraggableMarkers = () => {
         const target = event.target as HTMLElement
         target.style.cursor = 'move'
         target.style.transition = 'transform 0.2s ease-out'
+        
+        // Añadir console log para depuración final
+        console.log('Drag End - Final Position:', {
+          x: target.style.left,
+          y: target.style.top
+        })
       }
     },
     cursorChecker: () => 'move'

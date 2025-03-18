@@ -163,18 +163,43 @@
       const pdfBlob = pdf.output('blob')
       const pdfUrl = URL.createObjectURL(pdfBlob)
 
-      // Detección de dispositivo iOS
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      // Detección de dispositivos móviles
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
 
-      if (isIOS) {
-        // Estrategia específica para iOS
-        window.open(pdfUrl, '_blank')
+      if (isMobile) {
+        // Estrategia para dispositivos móviles
+        const link = document.createElement('a')
+        link.href = pdfUrl
+        link.target = '_blank'
+        link.rel = 'noopener noreferrer'
+        
+        // Intentar diferentes métodos de descarga
+        try {
+          // Método 1: Abrir en nueva pestaña
+          window.open(pdfUrl, '_blank')
+          
+          // Método 2: Intentar descarga directa
+          link.download = 'golf_cart_inspection.pdf'
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+        } catch (error) {
+          console.warn('Error en descarga móvil:', error)
+          // Notificación de problema de descarga
+          $q.notify({
+            type: 'warning',
+            message: 'No se pudo descargar automáticamente. Por favor, intenta descargar manualmente.',
+            position: 'top'
+          })
+        }
       } else {
-        // Método de descarga estándar para otros navegadores
+        // Método de descarga para escritorio
         const link = document.createElement('a')
         link.href = pdfUrl
         link.download = 'golf_cart_inspection.pdf'
+        document.body.appendChild(link)
         link.click()
+        document.body.removeChild(link)
       }
 
       // Liberar memoria

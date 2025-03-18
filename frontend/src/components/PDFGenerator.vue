@@ -159,8 +159,26 @@
         imgHeight
       )
       
-      // Guardar PDF
-      pdf.save('golf_cart_inspection.pdf')
+      // Generar Blob para descarga
+      const pdfBlob = pdf.output('blob')
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+
+      // Detección de dispositivo iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+
+      if (isIOS) {
+        // Estrategia específica para iOS
+        window.open(pdfUrl, '_blank')
+      } else {
+        // Método de descarga estándar para otros navegadores
+        const link = document.createElement('a')
+        link.href = pdfUrl
+        link.download = 'golf_cart_inspection.pdf'
+        link.click()
+      }
+
+      // Liberar memoria
+      URL.revokeObjectURL(pdfUrl)
 
       // Notificación
       $q.notify({

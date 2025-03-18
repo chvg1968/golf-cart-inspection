@@ -418,10 +418,7 @@ function generatePDF(event: Event) {
   // Preparar datos para PDF
   const pdfData = {
     guestInfo,
-    selectedProperty: {
-      ...selectedProperty.value,
-      name: selectedProperty.value?.name || 'Unknown Property'
-    },
+    selectedProperty,
     selectedCartType: selectedCartType.value,
     cartNumber: cartNumber.value,
     damages: damages.value,

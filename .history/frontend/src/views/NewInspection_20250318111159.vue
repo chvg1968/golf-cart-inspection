@@ -282,7 +282,7 @@ const termsAccepted = ref<boolean>(false)
 const cartNumber = ref<string>('')
 const cartType = ref<string>('')
 
-// Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
+// Observador para actualizar Cart Number y Cart Type cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {
   if (newProperty) {
     const selectedProp = propertyOptions.value.find(prop => prop.id === newProperty.id)
@@ -297,18 +297,6 @@ watch(selectedProperty, (newProperty) => {
       } else {
         selectedCartType.value = cartTypeOptions.value[0]
       }
-
-      // Seleccionar automáticamente el diagrama correcto
-      const diagramType = selectedProp.diagramType || '4seaters.png'
-      const diagramTypeMap: { [key: string]: string } = {
-        '6seaters.png': '6_seaters',
-        '4seaters.png': '4_seaters'
-      }
-      
-      // Actualizar el tipo de carrito basado en el diagrama
-      selectedCartType.value = cartTypeOptions.value.find(
-        type => type.value === diagramTypeMap[diagramType]
-      ) || cartTypeOptions.value[0]
     }
   }
 })
@@ -327,54 +315,27 @@ const damageColumns = [
     name: 'part', 
     label: 'Part', 
     field: (row: Damage) => row.part,
-    align: 'left' as const
+    align: 'left'
   },
   { 
     name: 'type', 
     label: 'Damage Type', 
     field: (row: Damage) => row.type,
-    align: 'left' as const
+    align: 'left'
   },
   { 
-    name: 'quantity', 
-    label: 'Quantity', 
-    field: (row: Damage) => row.quantity || 1,
-    align: 'left' as const
+    name: 'description', 
+    label: 'Description', 
+    field: (row: Damage) => row.description,
+    align: 'left'
   },
   { 
     name: 'actions', 
     label: 'Actions', 
     field: 'actions',
-    align: 'center' as const
+    align: 'center'
   }
 ]
-
-// Validación de formulario
-const isFormValid = computed(() => {
-  // Validar campos de información básica del invitado
-  const hasValidGuestInfo = 
-    guestInfo.name.trim() !== '' &&
-    guestInfo.email.trim() !== '' &&
-    guestInfo.phone.trim() !== '' &&
-    guestInfo.date.trim() !== ''
-
-  // Validar selección de propiedad
-  const hasValidProperty = selectedProperty.value !== null
-
-  // Validar tipo de carrito y número de carrito
-  const hasValidCartInfo = 
-    selectedCartType.value !== null &&
-    cartNumber.value.trim() !== ''
-
-  // Validar daños
-  const hasValidDamages = damages.value.length > 0
-
-  // Todas las condiciones deben cumplirse
-  return hasValidGuestInfo && 
-         hasValidProperty && 
-         hasValidCartInfo && 
-         hasValidDamages
-})
 
 // Función para añadir daño
 function addDamage(damage: Damage) {
@@ -418,10 +379,7 @@ function generatePDF(event: Event) {
   // Preparar datos para PDF
   const pdfData = {
     guestInfo,
-    selectedProperty: {
-      ...selectedProperty.value,
-      name: selectedProperty.value?.name || 'Unknown Property'
-    },
+    selectedProperty,
     selectedCartType: selectedCartType.value,
     cartNumber: cartNumber.value,
     damages: damages.value,
@@ -441,8 +399,9 @@ function validateForm(): boolean {
   const hasValidGuestInfo = name && email && phone && date
   const hasValidProperty = selectedProperty.value !== null
   const hasValidCartType = selectedCartType.value !== null
+  const hasAcceptedTerms = termsAccepted.value
 
-  return !!(hasValidGuestInfo && hasValidProperty && hasValidCartType)
+  return !!(hasValidGuestInfo && hasValidProperty && hasValidCartType && hasAcceptedTerms)
 }
 
 // Método cuando se genera el PDF

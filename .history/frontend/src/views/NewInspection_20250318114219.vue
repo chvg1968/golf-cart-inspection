@@ -336,9 +336,9 @@ const damageColumns = [
     align: 'left' as const
   },
   { 
-    name: 'quantity', 
-    label: 'Quantity', 
-    field: (row: Damage) => row.quantity || 1,
+    name: 'description', 
+    label: 'Description', 
+    field: (row: Damage) => row.description,
     align: 'left' as const
   },
   { 
@@ -418,10 +418,7 @@ function generatePDF(event: Event) {
   // Preparar datos para PDF
   const pdfData = {
     guestInfo,
-    selectedProperty: {
-      ...selectedProperty.value,
-      name: selectedProperty.value?.name || 'Unknown Property'
-    },
+    selectedProperty,
     selectedCartType: selectedCartType.value,
     cartNumber: cartNumber.value,
     damages: damages.value,

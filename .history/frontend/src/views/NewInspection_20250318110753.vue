@@ -242,7 +242,13 @@ import {
   DamageType,
   CartPart,
   Properties
-} from '@/types/base-types'
+} from '../types/base-types'
+
+// Extender el tipo Properties para incluir los nuevos campos
+interface ExtendedProperties extends Properties {
+  cartNumber?: string;
+  diagramType?: string;
+}
 
 // Configuración de Quasar
 const quasar = useQuasar()
@@ -251,13 +257,15 @@ const quasar = useQuasar()
 const cartParts = ref<CartPart[]>(CART_PARTS)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
-const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
-  ...prop,
+const propertyOptions = ref<ExtendedProperties[]>(PROPERTIES.map(prop => ({
   label: prop.name,
-  value: prop.id
+  value: prop.id,
+  cartNumber: prop.cartNumber || '',
+  diagramType: prop.diagramType || '4seaters.png',
+  ...prop
 })))
 
-const selectedProperty = ref<Properties | null>(null)
+const selectedProperty = ref<ExtendedProperties | null>(null)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
 const cartTypeOptions = ref<CartTypeOption[]>(GOLF_CART_TYPES)
@@ -282,7 +290,7 @@ const termsAccepted = ref<boolean>(false)
 const cartNumber = ref<string>('')
 const cartType = ref<string>('')
 
-// Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
+// Observador para actualizar Cart Number y Cart Type cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {
   if (newProperty) {
     const selectedProp = propertyOptions.value.find(prop => prop.id === newProperty.id)
@@ -297,24 +305,26 @@ watch(selectedProperty, (newProperty) => {
       } else {
         selectedCartType.value = cartTypeOptions.value[0]
       }
-
-      // Seleccionar automáticamente el diagrama correcto
-      const diagramType = selectedProp.diagramType || '4seaters.png'
-      const diagramTypeMap: { [key: string]: string } = {
-        '6seaters.png': '6_seaters',
-        '4seaters.png': '4_seaters'
-      }
-      
-      // Actualizar el tipo de carrito basado en el diagrama
-      selectedCartType.value = cartTypeOptions.value.find(
-        type => type.value === diagramTypeMap[diagramType]
-      ) || cartTypeOptions.value[0]
     }
   }
 })
 
+// Validación de formulario
+const isFormValid = computed(() => {
+  // Validar campos de información básica
+  const basicInfoComplete = 
+    guestInfo.name.trim() !== '' &&
+    guestInfo.email.trim() !== '' &&
+    guestInfo.phone.trim() !== '' &&
+    guestInfo.date.trim() !== '' &&
+    selectedProperty !== null &&
+    damages.value.length > 0  // Al menos una falla registrada
+
+  return basicInfoComplete
+})
+
 // Método para manejar la selección de Cart Type
-function onCartTypeSelect(value: string) {
+const onCartTypeSelect = (value: string) => {
   const selectedType = cartTypeOptions.value.find(type => type.value === value)
   if (selectedType) {
     selectedCartType.value = selectedType
@@ -325,60 +335,56 @@ function onCartTypeSelect(value: string) {
 const damageColumns = [
   { 
     name: 'part', 
+    required: true, 
     label: 'Part', 
-    field: (row: Damage) => row.part,
-    align: 'left' as const
+    align: 'left' as const, 
+    field: 'part' 
   },
   { 
     name: 'type', 
+    required: true, 
     label: 'Damage Type', 
-    field: (row: Damage) => row.type,
-    align: 'left' as const
+    align: 'left' as const, 
+    field: 'type' 
   },
   { 
     name: 'quantity', 
+    required: true, 
     label: 'Quantity', 
-    field: (row: Damage) => row.quantity || 1,
-    align: 'left' as const
+    align: 'left' as const, 
+    field: 'quantity' 
   },
   { 
     name: 'actions', 
-    label: 'Actions', 
-    field: 'actions',
-    align: 'center' as const
+    required: true, 
+    label: 'Action', 
+    align: 'center' as const, 
+    field: (row: Damage) => row 
   }
 ]
 
-// Validación de formulario
-const isFormValid = computed(() => {
-  // Validar campos de información básica del invitado
-  const hasValidGuestInfo = 
-    guestInfo.name.trim() !== '' &&
-    guestInfo.email.trim() !== '' &&
-    guestInfo.phone.trim() !== '' &&
-    guestInfo.date.trim() !== ''
-
-  // Validar selección de propiedad
-  const hasValidProperty = selectedProperty.value !== null
-
-  // Validar tipo de carrito y número de carrito
-  const hasValidCartInfo = 
-    selectedCartType.value !== null &&
-    cartNumber.value.trim() !== ''
-
-  // Validar daños
-  const hasValidDamages = damages.value.length > 0
-
-  // Todas las condiciones deben cumplirse
-  return hasValidGuestInfo && 
-         hasValidProperty && 
-         hasValidCartInfo && 
-         hasValidDamages
-})
-
 // Función para añadir daño
 function addDamage(damage: Damage) {
-  damages.value.push(damage)
+  // Verificar que no haya daños duplicados
+  const isDuplicateDamage = damages.value.some(
+    existingDamage => 
+      existingDamage.part === damage.part && 
+      existingDamage.type === damage.type
+  )
+
+  if (!isDuplicateDamage) {
+    // Añadir un ID único si no existe
+    const damageWithId = {
+      ...damage,
+      id: `${damage.part}-${damage.type}-${Date.now()}`
+    }
+    damages.value.push(damageWithId)
+  } else {
+    quasar.notify({
+      type: 'warning',
+      message: 'Este daño ya ha sido registrado.'
+    })
+  }
 }
 
 // Función para remover daño por índice
@@ -387,7 +393,7 @@ function removeDamage(index: number) {
 }
 
 // Función para actualizar posición de daño
-function updateDamagePosition({ index, x, y }: { index: number, x: number, y: number }) {
+const updateDamagePosition = ({ index, x, y }: { index: number, x: number, y: number }) => {
   if (damages.value[index]) {
     damages.value[index].x = x
     damages.value[index].y = y
@@ -398,54 +404,52 @@ function updateDamagePosition({ index, x, y }: { index: number, x: number, y: nu
 const formContainerRef = ref<HTMLElement>(document.createElement('div'))
 
 // Referencia al componente PDFGenerator
-const pdfGeneratorRef = ref(null)
+const pdfGeneratorRef = ref<InstanceType<typeof PDFGenerator> | null>(null)
 
 // Método para generar PDF
-function generatePDF(event: Event) {
+async function generatePDF(event: Event) {
   event.preventDefault()
 
-  // Validar el formulario
-  const formValid = validateForm()
-  if (!formValid) {
+  // Validación explícita de campos
+  const invalidFields = []
+  
+  if (!guestInfo.name) invalidFields.push('Nombre')
+  if (!guestInfo.email) invalidFields.push('Email')
+  if (!guestInfo.phone) invalidFields.push('Teléfono')
+  if (!guestInfo.date) invalidFields.push('Fecha')
+  if (!selectedProperty.value) invalidFields.push('Propiedad')
+  if (damages.value.length === 0) invalidFields.push('Daños')
+
+  if (invalidFields.length > 0) {
     quasar.notify({
-      type: 'negative',
-      message: 'Por favor, complete todos los campos requeridos',
+      type: 'warning',
+      message: `Por favor complete los siguientes campos: ${invalidFields.join(', ')}`,
       position: 'top'
     })
     return
   }
 
-  // Preparar datos para PDF
-  const pdfData = {
-    guestInfo,
-    selectedProperty: {
-      ...selectedProperty.value,
-      name: selectedProperty.value?.name || 'Unknown Property'
-    },
-    selectedCartType: selectedCartType.value,
-    cartNumber: cartNumber.value,
-    damages: damages.value,
-    guestObservations: guestObservations.value,
-    signature: signature.value
-  }
-
-  // Llamar al método de generación de PDF
+  // Llamar al método de generación de PDF del componente PDFGenerator
   if (pdfGeneratorRef.value) {
-    (pdfGeneratorRef.value as any).generatePDF(pdfData)
+    try {
+      await pdfGeneratorRef.value.generatePDF({
+        guestInfo,
+        selectedProperty: selectedProperty.value,
+        selectedCartType: selectedCartType.value,
+        cartNumber: cartNumber.value,
+        damages: damages.value
+      })
+    } catch (error) {
+      console.error('Error al generar PDF:', error)
+      quasar.notify({
+        type: 'negative',
+        message: 'Error al generar PDF',
+        position: 'top'
+      })
+    }
   }
 }
 
-// Función para validar el formulario
-function validateForm(): boolean {
-  const { name, email, phone, date } = guestInfo
-  const hasValidGuestInfo = name && email && phone && date
-  const hasValidProperty = selectedProperty.value !== null
-  const hasValidCartType = selectedCartType.value !== null
-
-  return !!(hasValidGuestInfo && hasValidProperty && hasValidCartType)
-}
-
-// Método cuando se genera el PDF
 function onPDFGenerated() {
   quasar.notify({
     type: 'positive',
@@ -454,8 +458,8 @@ function onPDFGenerated() {
   })
 }
 
-// Método cuando hay un error en la generación del PDF
 function onPDFError(error: Error) {
+  console.error('Error en generación de PDF:', error)
   quasar.notify({
     type: 'negative',
     message: 'Error al generar PDF: ' + error.message,

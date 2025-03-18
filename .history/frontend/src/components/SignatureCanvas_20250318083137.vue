@@ -1,8 +1,7 @@
 <template>
   <div class="signature-section">
-    <p>
-      I hereby certify that the golf cart described above was granted to me on the date mentioned, and I acknowledge the stated damages. Any additional damages not listed are new and are considered my responsibility.
-    </p>
+    
+
     <div class="signature-container">
       <canvas
         ref="signaturePad"

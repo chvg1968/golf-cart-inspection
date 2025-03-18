@@ -337,14 +337,84 @@ export const DAMAGE_TYPES: DamageType[] = [
 ]
 
 export const PROPERTIES: Properties[] = [
-  { id: 'atl_g7_casa_prestige', name: 'Atl. G7 Casa Prestige', type: 'string', required: false },
-  { id: 'est_24_casa_paraiso', name: 'Est. 24 Casa Paraiso', type: 'string', required: false },
-  { id: '3325_villa_clara', name: '3325 Villa Clara', type: 'string', required: false },
-  { id: '7256_villa_palacio', name: '7256 Villa Palacio', type: 'string', required: false },
-  { id: '10180_villa_flora', name: '10180 Villa Flora', type: 'string', required: false },
-  { id: '5138_villa_paloma', name: '5138 Villa Paloma', type: 'string', required: false },
-  { id: 'temporal', name: 'Temporal', type: 'string', required: false },
-  { id: '2_102_villa_ocean_bliss', name: '2-102 Villa Ocean Bliss', type: 'string', required: false },
-  { id: '10389_villa_tiffany', name: '10389 Villa Tiffany', type: 'string', required: false },
-  { id: '2_208_ocean_haven_villa', name: '2-208 Ocean Haven Villa', type: 'string', required: false }
+  { 
+    id: 'rental_6_passenger_150', 
+    name: 'Rental #150', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '150', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'rental_6_passenger_144', 
+    name: 'Rental #144', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '144', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'villa_flora_10180', 
+    name: 'Villa Flora 10180', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '18', 
+    diagramType: '4seaters.png' 
+  },
+  { 
+    id: 'ocean_haven_208', 
+    name: 'Ocean Haven 208', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '71', 
+    diagramType: '4seaters.png' 
+  },
+  { 
+    id: 'casa_prestige_g7_4_passenger', 
+    name: 'Casa Prestige G7 (4 passenger)', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '22', 
+    diagramType: '4seaters.png' 
+  },
+  { 
+    id: 'casa_prestige_g7_6_passenger', 
+    name: 'Casa Prestige G7 (6 passenger)', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '193', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'villa_tiffany_10389', 
+    name: 'Villa Tiffany 10389', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '136', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'villa_palacio_7256', 
+    name: 'Villa Palacio 7256', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '130', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'villa_clara_3325', 
+    name: 'Villa Clara 3325', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '119', 
+    diagramType: '6seaters.png' 
+  },
+  { 
+    id: 'villa_paloma_5138', 
+    name: 'Villa Paloma 5138', 
+    type: 'string', 
+    required: false, 
+    cartNumber: '101', 
+    diagramType: '6seaters.png' 
+  }
 ]

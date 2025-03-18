@@ -22,6 +22,7 @@
     guestInfo?: GuestInfo
     selectedProperty?: Properties | null
     selectedCartType?: CartTypeOption | null
+    cartNumber?: string
     damages?: Damage[]
   }
 
@@ -166,6 +167,14 @@
       // Detección de dispositivos móviles
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
 
+      // Generar nombre de archivo descriptivo
+      const sanitizeFileName = (input: string) => 
+        input.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+
+      const fileName = data 
+        ? `Inspection/${sanitizeFileName(data.cartNumber || 'unknown')}/${sanitizeFileName(data.selectedProperty?.name || 'unknown')}/${sanitizeFileName(data.guestInfo?.name || 'unknown')}.pdf`
+        : 'golf_cart_inspection.pdf'
+
       if (isMobile) {
         // Estrategia para dispositivos móviles
         const link = document.createElement('a')
@@ -179,7 +188,7 @@
           window.open(pdfUrl, '_blank')
           
           // Método 2: Intentar descarga directa
-          link.download = 'golf_cart_inspection.pdf'
+          link.download = fileName
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)
@@ -196,38 +205,20 @@
         // Método de descarga para escritorio
         const link = document.createElement('a')
         link.href = pdfUrl
-        link.download = 'golf_cart_inspection.pdf'
+        link.download = fileName
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
       }
 
-      // Liberar memoria
+      // Liberar recursos
       URL.revokeObjectURL(pdfUrl)
 
-      // Notificación
-      $q.notify({
-        type: 'positive',
-        message: 'PDF generado exitosamente',
-        position: 'top'
-      })
-
-      // Emitir evento de éxito
+      // Emitir evento de PDF generado
       emit('pdf-generated')
-
     } catch (error) {
       console.error('Error generando PDF:', error)
-      
-      // Emitir evento de error
-      emit('pdf-error', error as Error)
-      
-      $q.notify({
-        type: 'negative',
-        message: 'Error al generar PDF: ' + (error as Error).message,
-        position: 'top'
-      })
-
-      throw error;
+      emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))
     }
   }
 

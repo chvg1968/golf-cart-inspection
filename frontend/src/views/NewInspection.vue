@@ -94,7 +94,7 @@
                 </div>
                 <div class="col-12">
                   <q-select 
-                    v-model="selectedCartType" 
+                    v-model="selectedCartType.value" 
                     :options="cartTypeOptions" 
                     label="Cart Type" 
                     outlined 
@@ -223,13 +223,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useQuasar } from 'quasar'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
-
 import SignatureCanvas from '@/components/SignatureCanvas.vue'
-import DamageRecordList from '@/components/DamageRecordList.vue'
 import DamageRecordForm from '@/components/DamageRecordForm.vue'
 import CartDiagramAnnotations from '@/components/CartDiagramAnnotations.vue'
 import PDFGenerator from '@/components/PDFGenerator.vue'
@@ -237,7 +233,6 @@ import PDFGenerator from '@/components/PDFGenerator.vue'
 import { CART_PARTS, PROPERTIES, GOLF_CART_TYPES, DAMAGE_TYPES } from '@/constants'
 import { 
   Damage, 
-  CartTypeOption, 
   DamageType,
   CartPart,
   Properties
@@ -259,7 +254,7 @@ const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
 const selectedProperty = ref<Properties | null>(null)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
-const cartTypeOptions = ref<CartTypeOption[]>(GOLF_CART_TYPES)
+const cartTypeOptions = ref<any[]>(GOLF_CART_TYPES)
 
 // Convertir DAMAGE_TYPES a DamageType[]
 const damageTypes = ref<DamageType[]>(DAMAGE_TYPES)
@@ -289,6 +284,15 @@ const defaultCartType: CartType = {
   value: 'default'
 }
 
+// Definir una interfaz para las opciones de tipo de carrito
+interface CartTypeOption {
+  id?: string | number;
+  name?: string;
+  label: string;
+  diagramPath?: string;
+  value: string;
+}
+
 // Usar la interfaz definida para el ref con un valor inicial
 const selectedCartType = ref<CartType>(defaultCartType)
 
@@ -313,14 +317,32 @@ watch(selectedProperty, (newProperty) => {
       )
       
       // Usar el tipo de carrito encontrado o el valor por defecto
-      selectedCartType.value = cartTypeMatch || defaultCartType
+      selectedCartType.value = cartTypeMatch 
+        ? { 
+            id: cartTypeMatch.id || 'default', 
+            name: cartTypeMatch.name || 'Default Cart', 
+            label: cartTypeMatch.label, 
+            diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
+            value: cartTypeMatch.value 
+          } 
+        : defaultCartType
     }
   }
 })
 
 // Método para manejar la selección de Cart Type
-const onCartTypeSelect = (value: CartType) => {
-  selectedCartType.value = value
+const onCartTypeSelect = (value: any | null) => {
+  if (value) {
+    selectedCartType.value = {
+      id: value.id || 'default',
+      name: value.name || 'Default Cart',
+      label: value.label,
+      diagramPath: value.diagramPath || '/default-diagram.svg',
+      value: value.value
+    }
+  } else {
+    selectedCartType.value = defaultCartType
+  }
 }
 
 // Asegurar que cart-type siempre tenga un valor de cadena

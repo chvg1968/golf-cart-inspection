@@ -122,7 +122,7 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="selectedCartType?.value || ''"
+              :cart-type="selectedCartType.value" 
               :damages="damages"
               @update-damage-position="updateDamagePosition"
             />
@@ -272,7 +272,26 @@ const guestInfo = reactive({
   date: ''
 })
 
-const selectedCartType = ref<{ id: string | number; name: string; label: string; diagramPath: string; value: string } | null>(null)
+// Definir una interfaz para el tipo de carrito
+interface CartType {
+  id: string | number;
+  name: string;
+  label: string;
+  diagramPath: string;
+  value: string;
+}
+
+// Definir un valor por defecto para el tipo de carrito
+const defaultCartType: CartType = {
+  id: 'default',
+  name: 'Default Cart',
+  label: 'Default Cart',
+  diagramPath: '/default-diagram.svg',
+  value: 'default'
+}
+
+// Usar la interfaz definida para el ref
+const selectedCartType = ref<CartType>(defaultCartType)
 
 const damages = ref<Damage[]>([])
 const guestObservations = ref<string>('')
@@ -294,13 +313,8 @@ watch(selectedProperty, (newProperty) => {
         selectedProp.cartNumber?.includes(type.label.replace(' passenger', ''))
       )
       
-      selectedCartType.value = cartTypeMatch || {
-        id: 'default',
-        name: 'Default Cart',
-        label: 'Default Cart',
-        diagramPath: '/default-diagram.svg',
-        value: 'default'
-      }
+      // Usar el tipo de carrito encontrado o el valor por defecto
+      selectedCartType.value = cartTypeMatch || defaultCartType
     }
   }
 })

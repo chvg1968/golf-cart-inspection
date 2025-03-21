@@ -294,32 +294,44 @@ const termsAccepted = ref<boolean>(false)
 
 const cartNumber = ref<string>('')
 
-
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {
   if (newProperty) {
     const selectedProp = propertyOptions.value.find(prop => prop.id === newProperty.id)
     if (selectedProp) {
+      // Actualizar Cart Number
       cartNumber.value = selectedProp.cartNumber ?? ''
       
-      // Determinar el tipo de carrito basado en el número de pasajeros en el cartNumber
+      // Determinar el tipo de carrito basado en la propiedad diagramType
       const cartTypeMatch = cartTypeOptions.value.find(type => 
-        selectedProp.cartNumber?.includes(type.label.replace(' passenger', ''))
+        selectedProp.diagramType?.toLowerCase().includes(type.label.toLowerCase().replace(' seaters', ''))
       )
       
       // Usar el tipo de carrito encontrado o el valor por defecto
-      selectedCartType.value = cartTypeMatch 
-        ? { 
-            id: cartTypeMatch.id || 'default', 
-            name: cartTypeMatch.name || 'Default Cart', 
-            label: cartTypeMatch.label, 
-            diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
-            value: cartTypeMatch.value 
-          } 
-        : defaultCartType
+      if (cartTypeMatch) {
+        selectedCartType.value = { 
+          id: cartTypeMatch.id || 'default', 
+          name: cartTypeMatch.name || 'Default Cart', 
+          label: cartTypeMatch.label, 
+          diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
+          value: cartTypeMatch.value 
+        }
+      } else {
+        selectedCartType.value = defaultCartType
+      }
+      
+      // Depuración: Imprimir información para verificar la selección
+      console.log('Selected Property:', selectedProp)
+      console.log('Cart Number:', cartNumber.value)
+      console.log('Cart Type Match:', cartTypeMatch)
+      console.log('Selected Cart Type:', selectedCartType.value)
     }
+  } else {
+    // Resetear valores si no hay propiedad seleccionada
+    cartNumber.value = ''
+    selectedCartType.value = defaultCartType
   }
-})
+}, { immediate: true })
 
 // Método para manejar la selección de Cart Type
 const onCartTypeSelect = (value: any | null) => {

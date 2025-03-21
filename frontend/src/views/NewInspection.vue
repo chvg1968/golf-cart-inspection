@@ -284,15 +284,6 @@ const defaultCartType: CartType = {
   value: 'default'
 }
 
-// Definir una interfaz para las opciones de tipo de carrito
-interface CartTypeOption {
-  id?: string | number;
-  name?: string;
-  label: string;
-  diagramPath?: string;
-  value: string;
-}
-
 // Usar la interfaz definida para el ref con un valor inicial
 const selectedCartType = ref<CartType>(defaultCartType)
 
@@ -302,7 +293,7 @@ const signature = ref<string | null>(null)
 const termsAccepted = ref<boolean>(false)
 
 const cartNumber = ref<string>('')
-const cartType = ref<string>('')
+
 
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {

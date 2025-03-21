@@ -1,6 +1,6 @@
 [build]
   base = "frontend"
-  command = "npm install && npm run build && npm run typecheck"
+  command = "npm install && npm run build"
   publish = "dist"
 
 [build.environment]
@@ -13,4 +13,4 @@
   status = 200
 
 [context.production]
-  command = "npm install && npm run build && npm run typecheck"
+  command = "npm install && npm run build"

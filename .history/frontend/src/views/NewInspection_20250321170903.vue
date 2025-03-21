@@ -233,6 +233,7 @@ import PDFGenerator from '@/components/PDFGenerator.vue'
 import { CART_PARTS, PROPERTIES, GOLF_CART_TYPES, DAMAGE_TYPES } from '@/constants'
 import { 
   Damage, 
+  CartTypeOption, 
   DamageType,
   CartPart,
   Properties
@@ -254,7 +255,7 @@ const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
 const selectedProperty = ref<Properties | null>(null)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
-const cartTypeOptions = ref<any[]>(GOLF_CART_TYPES)
+const cartTypeOptions = ref<CartTypeOption[]>(GOLF_CART_TYPES)
 
 // Convertir DAMAGE_TYPES a DamageType[]
 const damageTypes = ref<DamageType[]>(DAMAGE_TYPES)
@@ -331,7 +332,7 @@ watch(selectedProperty, (newProperty) => {
 })
 
 // Método para manejar la selección de Cart Type
-const onCartTypeSelect = (value: any | null) => {
+const onCartTypeSelect = (value: CartTypeOption | null) => {
   if (value) {
     selectedCartType.value = {
       id: value.id || 'default',

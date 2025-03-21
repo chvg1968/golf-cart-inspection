@@ -121,7 +121,7 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="selectedCartType.value || ''"
+              :cart-type="cartTypeForDiagram"
               :damages="damages"
               @update-damage-position="updateDamagePosition"
             />
@@ -318,11 +318,15 @@ watch(selectedProperty, (newProperty) => {
   }
 })
 
-// Modificar la función de selección de tipo de carrito para asegurar un valor válido
-const onCartTypeSelect = (value: string | null) => {
-  const selectedType = cartTypeOptions.value.find(type => type.value === value)
-  selectedCartType.value = selectedType || defaultCartType
+// Método para manejar la selección de Cart Type
+const onCartTypeSelect = (value: CartType) => {
+  selectedCartType.value = value
 }
+
+// Asegurar que cart-type siempre tenga un valor de cadena
+const cartTypeForDiagram = computed(() => {
+  return selectedCartType.value?.value || ''
+})
 
 // Definir columnas para la tabla de daños
 const damageColumns = [

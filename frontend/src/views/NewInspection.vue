@@ -121,7 +121,7 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="selectedCartType?.value" 
+              :cart-type="selectedCartType.value || ''"
               :damages="damages"
               @update-damage-position="updateDamagePosition"
             />
@@ -271,13 +271,13 @@ const guestInfo = reactive({
   date: ''
 })
 
-// Definir una interfaz para el tipo de carrito con valores opcionales
+// Definir una interfaz para el tipo de carrito con valores por defecto
 interface CartType {
-  id?: string | number;
-  name?: string;
-  label?: string;
-  diagramPath?: string;
-  value?: string;
+  id: string | number;
+  name: string;
+  label: string;
+  diagramPath: string;
+  value: string;
 }
 
 // Definir un valor por defecto para el tipo de carrito
@@ -313,17 +313,15 @@ watch(selectedProperty, (newProperty) => {
       )
       
       // Usar el tipo de carrito encontrado o el valor por defecto
-      selectedCartType.value = cartTypeMatch ?? defaultCartType
+      selectedCartType.value = cartTypeMatch || defaultCartType
     }
   }
 })
 
-// Método para manejar la selección de Cart Type
-function onCartTypeSelect(value: string) {
+// Modificar la función de selección de tipo de carrito para asegurar un valor válido
+const onCartTypeSelect = (value: string | null) => {
   const selectedType = cartTypeOptions.value.find(type => type.value === value)
-  if (selectedType) {
-    selectedCartType.value = selectedType
-  }
+  selectedCartType.value = selectedType || defaultCartType
 }
 
 // Definir columnas para la tabla de daños

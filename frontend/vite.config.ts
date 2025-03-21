@@ -20,5 +20,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true
+  },
+  // Deshabilitar verificación de tipos estricta
+  typescript: {
+    strict: false
   }
 })

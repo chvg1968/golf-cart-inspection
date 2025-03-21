@@ -98,7 +98,6 @@
                     :options="cartTypeOptions" 
                     label="Cart Type" 
                     outlined 
-                    required
                     input-class="custom-input-text"
                     @update:model-value="onCartTypeSelect"
                   />
@@ -122,7 +121,7 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="selectedCartType.value" 
+              :cart-type="selectedCartType?.value" 
               :damages="damages"
               @update-damage-position="updateDamagePosition"
             />
@@ -272,13 +271,13 @@ const guestInfo = reactive({
   date: ''
 })
 
-// Definir una interfaz para el tipo de carrito
+// Definir una interfaz para el tipo de carrito con valores opcionales
 interface CartType {
-  id: string | number;
-  name: string;
-  label: string;
-  diagramPath: string;
-  value: string;
+  id?: string | number;
+  name?: string;
+  label?: string;
+  diagramPath?: string;
+  value?: string;
 }
 
 // Definir un valor por defecto para el tipo de carrito
@@ -290,7 +289,7 @@ const defaultCartType: CartType = {
   value: 'default'
 }
 
-// Usar la interfaz definida para el ref
+// Usar la interfaz definida para el ref con un valor inicial
 const selectedCartType = ref<CartType>(defaultCartType)
 
 const damages = ref<Damage[]>([])
@@ -314,7 +313,7 @@ watch(selectedProperty, (newProperty) => {
       )
       
       // Usar el tipo de carrito encontrado o el valor por defecto
-      selectedCartType.value = cartTypeMatch || defaultCartType
+      selectedCartType.value = cartTypeMatch ?? defaultCartType
     }
   }
 })

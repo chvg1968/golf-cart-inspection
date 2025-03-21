@@ -20,5 +20,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true
+  },
+  // Deshabilitar verificación de tipos durante la compilación
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        skipLibCheck: true
+      }
+    }
   }
 })

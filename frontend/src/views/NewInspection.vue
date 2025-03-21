@@ -122,7 +122,7 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="selectedCartType"
+              :cart-type="selectedCartType?.value || ''"
               :damages="damages"
               @update-damage-position="updateDamagePosition"
             />
@@ -272,7 +272,7 @@ const guestInfo = reactive({
   date: ''
 })
 
-const selectedCartType = ref<CartTypeOption>(cartTypeOptions.value[0])
+const selectedCartType = ref<{ id: string | number; name: string; label: string; diagramPath: string; value: string } | null>(null)
 
 const damages = ref<Damage[]>([])
 const guestObservations = ref<string>('')
@@ -290,25 +290,17 @@ watch(selectedProperty, (newProperty) => {
       cartNumber.value = selectedProp.cartNumber ?? ''
       
       // Determinar el tipo de carrito basado en el número de pasajeros en el cartNumber
-      if (selectedProp.cartNumber?.includes('6 passenger')) {
-        selectedCartType.value = cartTypeOptions.value.find(type => type.value === '6_seaters') || cartTypeOptions.value[0]
-      } else if (selectedProp.cartNumber?.includes('4 passenger')) {
-        selectedCartType.value = cartTypeOptions.value.find(type => type.value === '4_seaters') || cartTypeOptions.value[0]
-      } else {
-        selectedCartType.value = cartTypeOptions.value[0]
-      }
-
-      // Seleccionar automáticamente el diagrama correcto
-      const diagramType = selectedProp.diagramType || '4seaters.png'
-      const diagramTypeMap: { [key: string]: string } = {
-        '6seaters.png': '6_seaters',
-        '4seaters.png': '4_seaters'
-      }
+      const cartTypeMatch = cartTypeOptions.value.find(type => 
+        selectedProp.cartNumber?.includes(type.label.replace(' passenger', ''))
+      )
       
-      // Actualizar el tipo de carrito basado en el diagrama
-      selectedCartType.value = cartTypeOptions.value.find(
-        type => type.value === diagramTypeMap[diagramType]
-      ) || cartTypeOptions.value[0]
+      selectedCartType.value = cartTypeMatch || {
+        id: 'default',
+        name: 'Default Cart',
+        label: 'Default Cart',
+        diagramPath: '/default-diagram.svg',
+        value: 'default'
+      }
     }
   }
 })

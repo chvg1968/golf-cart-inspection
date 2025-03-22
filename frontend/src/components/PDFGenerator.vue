@@ -5,7 +5,7 @@
   </template>
   
   <script setup lang="ts">
-  import { ref, defineProps, defineEmits, defineExpose } from 'vue'
+  import { ref, defineProps, defineEmits, defineExpose, computed } from 'vue'
   import { useQuasar } from 'quasar'
   import html2canvas from 'html2canvas'
   import jsPDF from 'jspdf'
@@ -24,12 +24,17 @@
     selectedCartType?: CartTypeOption | null
     cartNumber?: string
     damages?: Damage[]
+    annotatedDiagramImage?: string
+    cartDiagramDrawing?: string
   }
 
   const $q = useQuasar()
 
   const props = defineProps<{
     formContainer: HTMLElement
+    guestInformation: any
+    selectedProperty: Properties | null
+    annotatedDiagramImage: any
   }>()
 
   const emit = defineEmits<{
@@ -105,6 +110,51 @@
         })
       })
 
+      // Función para esperar la carga de imagen
+      const waitForImageLoad = (imgElement: HTMLImageElement): Promise<void> => {
+        return new Promise((resolve, reject) => {
+          if (imgElement.complete) {
+            resolve()
+          } else {
+            imgElement.onload = () => resolve()
+            imgElement.onerror = () => reject(new Error('Error cargando imagen'))
+          }
+        })
+      }
+
+      // Reemplazar diagrama con imagen anotada si está disponible
+      const diagramContainer = clonedForm.querySelector('.diagram-container')
+      let annotatedImageLoaded = false
+      
+      // Verificar si hay imagen anotada en props o en data
+      const annotatedImage = props.annotatedDiagramImage || 
+                             (data && (data.annotatedDiagramImage || data.cartDiagramDrawing))
+
+      console.log('Imagen anotada:', {
+        propsImage: props.annotatedDiagramImage,
+        dataImage: data?.annotatedDiagramImage,
+        dataDrawing: data?.cartDiagramDrawing
+      })
+
+      if (diagramContainer && annotatedImage) {
+        const imgElement = document.createElement('img')
+        imgElement.src = annotatedImage
+        imgElement.style.maxWidth = '100%'
+        imgElement.style.height = 'auto'
+        diagramContainer.innerHTML = ''
+        diagramContainer.appendChild(imgElement)
+
+        try {
+          await waitForImageLoad(imgElement)
+          annotatedImageLoaded = true
+          console.log('Imagen anotada cargada correctamente')
+        } catch (error) {
+          console.error('Error cargando imagen anotada:', error)
+        }
+      } else {
+        console.warn('No se encontró imagen anotada')
+      }
+
       // Contenedor temporal para renderizado
       const tempDiv = document.createElement('div')
       tempDiv.style.position = 'absolute'
@@ -115,6 +165,9 @@
       tempDiv.style.boxSizing = 'border-box'
       tempDiv.appendChild(clonedForm)
       document.body.appendChild(tempDiv)
+
+      // Añadir un pequeño retraso para asegurar renderizado
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       // Capturar canvas
       const canvas = await html2canvas(clonedForm, {
@@ -222,6 +275,44 @@
     }
   }
 
+  // Método para descargar PDF
+  const downloadPDF = async (pdfData: any) => {
+    try {
+      // Validar datos de entrada
+      if (!pdfData) {
+        throw new Error('Datos de PDF no proporcionados')
+      }
+
+      // Validar campos requeridos
+      const requiredFields = [
+        'guestInfo', 
+        'selectedProperty', 
+        'selectedCartType', 
+        'cartNumber'
+      ]
+      
+      for (const field of requiredFields) {
+        if (!pdfData[field]) {
+          throw new Error(`Campo requerido faltante: ${field}`)
+        }
+      }
+
+      // Generar PDF
+      await generatePDF(pdfData)
+    } catch (error) {
+      console.error('Error al generar PDF:', error)
+      $q.notify({
+        type: 'negative',
+        message: 'No se pudo generar el PDF',
+        caption: error instanceof Error ? error.message : 'Error desconocido',
+        position: 'top'
+      })
+    }
+  }
+
   // Exponer método para ser llamado desde el padre
-  defineExpose({ generatePDF })
+  defineExpose({ 
+    downloadPDF,
+    generatePDF  // Mantener generatePDF por compatibilidad
+  })
   </script>

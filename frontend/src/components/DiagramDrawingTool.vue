@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const props = defineProps({
   backgroundImage: {
@@ -73,7 +73,6 @@ const currentLineWidth = ref(lineWidths[1])
 
 const drawingCanvas = ref<HTMLCanvasElement | null>(null)
 const isDrawing = ref(false)
-const context = ref<CanvasRenderingContext2D | null>(null)
 
 // Historial de trazos para deshacer
 const drawHistory: ImageData[] = []

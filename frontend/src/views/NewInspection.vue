@@ -124,12 +124,13 @@
               :cart-type="cartTypeForDiagram"
               :damages="damages"
               @update-damage-position="updateDamagePosition"
+              @drawing-created="handleDrawingCreated"
             />
           </div>
         </div>
 
         <!-- Damage Records Table -->
-        <div class="column q-mt-md">
+        <!-- <div class="column q-mt-md">
           <div class="col-12">
             <q-card flat bordered>
               <q-card-section>
@@ -162,16 +163,16 @@
               </q-card-section>
             </q-card>
           </div>
-        </div>
+        </div> -->
 
         <!-- Damage Record Form Section -->
-        <div class="col-12 damage-record-form">
+        <!-- <div class="col-12 damage-record-form">
           <DamageRecordForm 
             :cart-parts="cartParts"
             :damage-types="damageTypes"
             @add="addDamage"
           />
-        </div>
+        </div> -->
 
         <!-- Guest Observations -->
         <div class="col-12 col-md-6 offset-md-3">
@@ -214,7 +215,7 @@
             label="Download PDF" 
             color="primary" 
             type="submit"
-            :disable="!isFormValid"
+            :disable="!canDownloadPDF"
           />
         </div>
       </div>
@@ -293,6 +294,16 @@ const signature = ref<string | null>(null)
 const termsAccepted = ref<boolean>(false)
 
 const cartNumber = ref<string>('')
+
+// Almacenar dibujos como base64
+const cartDiagramDrawing = ref<string | null>(null)
+
+// Manejo de imagen anotada
+const annotatedDiagramImage = ref<string | null>(null)
+
+const handleDrawingCreated = (base64Image: string) => {
+  annotatedDiagramImage.value = base64Image
+}
 
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {
@@ -382,30 +393,35 @@ const damageColumns = [
 ]
 
 // Validación de formulario
-const isFormValid = computed(() => {
-  // Validar campos de información básica del invitado
-  const hasValidGuestInfo = 
-    guestInfo.name.trim() !== '' &&
-    guestInfo.email.trim() !== '' &&
-    guestInfo.phone.trim() !== '' &&
-    guestInfo.date.trim() !== ''
-
-  // Validar selección de propiedad
+function validateForm(): boolean {
+  const { name, email, phone, date } = guestInfo
+  
+  // Validaciones detalladas con logs de depuración
+  const hasValidGuestInfo = !!(name && email && phone && date)
   const hasValidProperty = selectedProperty.value !== null
+  const hasValidCartType = selectedCartType.value !== null
+  const hasValidDiagram = !!(annotatedDiagramImage.value || cartDiagramDrawing.value)
 
-  // Validar tipo de carrito y número de carrito
-  const hasValidCartInfo = 
-    selectedCartType.value !== null &&
-    cartNumber.value.trim() !== ''
+  console.log('Validación de formulario:', {
+    guestInfo: hasValidGuestInfo,
+    property: hasValidProperty,
+    cartType: hasValidCartType,
+    diagram: hasValidDiagram
+  })
 
-  // Validar daños
-  const hasValidDamages = damages.value.length > 0
+  return !!(
+    hasValidGuestInfo && 
+    hasValidProperty && 
+    hasValidCartType && 
+    hasValidDiagram
+  )
+}
 
-  // Todas las condiciones deben cumplirse
-  return hasValidGuestInfo && 
-         hasValidProperty && 
-         hasValidCartInfo && 
-         hasValidDamages
+// Computed para habilitar/deshabilitar botón de PDF
+const canDownloadPDF = computed(() => {
+  const isValid = validateForm()
+  console.log('Puede descargar PDF:', isValid)
+  return isValid
 })
 
 // Función para añadir daño
@@ -424,6 +440,11 @@ function updateDamagePosition({ index, x, y }: { index: number, x: number, y: nu
     damages.value[index].x = x
     damages.value[index].y = y
   }
+}
+
+// Función para crear dibujo
+function onDrawingCreated(drawing: string) {
+  cartDiagramDrawing.value = drawing
 }
 
 // Referencia al contenedor del formulario
@@ -458,23 +479,33 @@ function generatePDF(event: Event) {
     cartNumber: cartNumber.value,
     damages: damages.value,
     guestObservations: guestObservations.value,
-    signature: signature.value
+    signature: signature.value,
+    cartDiagramDrawing: cartDiagramDrawing.value,
+    annotatedDiagramImage: annotatedDiagramImage.value
   }
 
   // Llamar al método de generación de PDF
   if (pdfGeneratorRef.value) {
-    (pdfGeneratorRef.value as any).generatePDF(pdfData)
+    // Usar método expuesto del componente PDFGenerator
+    const pdfGenerator = pdfGeneratorRef.value as { downloadPDF: (data: any) => void }
+    if (typeof pdfGenerator.downloadPDF === 'function') {
+      pdfGenerator.downloadPDF(pdfData)
+    } else {
+      console.error('downloadPDF no es una función', pdfGenerator)
+      quasar.notify({
+        type: 'negative',
+        message: 'Error al generar PDF',
+        position: 'top'
+      })
+    }
+  } else {
+    console.error('pdfGeneratorRef no está definido')
+    quasar.notify({
+      type: 'negative',
+      message: 'Referencia a generador de PDF no encontrada',
+      position: 'top'
+    })
   }
-}
-
-// Función para validar el formulario
-function validateForm(): boolean {
-  const { name, email, phone, date } = guestInfo
-  const hasValidGuestInfo = name && email && phone && date
-  const hasValidProperty = selectedProperty.value !== null
-  const hasValidCartType = selectedCartType.value !== null
-
-  return !!(hasValidGuestInfo && hasValidProperty && hasValidCartType)
 }
 
 // Método cuando se genera el PDF

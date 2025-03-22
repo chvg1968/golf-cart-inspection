@@ -1,42 +1,83 @@
 <template>
-  <div 
-    ref="cartDiagramContainer"
-    class="cart-diagram-container"
-  >
-    <img 
-      ref="cartImage"
-      :src="cartImageSrc" 
-      :alt="cartTypeLabel + ' Golf Cart'"
-      class="cart-diagram"
-      :class="{ 'six-seater': isCartSixSeater }"
-      draggable="false"
-    />
-    
-    <!-- Marcadores de daño -->
-    <div 
-      v-for="(damage, index) in damages" 
-      :key="index"
-      :ref="(ref: Element | ComponentPublicInstance | null) => setDamageMarkerRef(ref as HTMLDivElement | null, index)"
-      class="damage-marker draggable"
-      :data-index="index"
-      :style="{ 
-        left: `${damage.x}%`, 
-        top: `${damage.y}%`
-      }"
-    >
-      <span class="marker-icon">❌</span>
-      <div class="marker-tooltip marker-tooltip-permanent">
-        <span class="marker-part-name">{{ damage.part }}</span>
-        <span class="marker-damage-type">({{ damage.type }})</span>
+  <div class="cart-diagram-annotations-container">
+    <!-- Convención de colores -->
+    <div class="color-convention">
+      <div class="convention-item">
+        <span class="color-dot" style="background-color: red;"></span>
+        <span>Scratches</span>
+      </div>
+      <div class="convention-item">
+        <span class="color-dot" style="background-color: lightgreen;"></span>
+        <span>Missing parts</span>
+      </div>
+      <div class="convention-item">
+        <span class="color-dot" style="background-color: yellow;"></span>
+        <span>Damage/Bumps</span>
+      </div>
+    </div>
+
+    <div class="diagram-container" ref="cartDiagramContainer">
+      <!-- Herramientas de dibujo -->
+      <div class="drawing-tools">
+        <!-- Selector de color -->
+        <div class="color-picker">
+          <button 
+            v-for="option in colorOptions" 
+            :key="option.color"
+            :style="{ backgroundColor: option.color }"
+            @click.prevent="selectColor(option.color)"
+            :class="{ active: currentColor === option.color }"
+          ></button>
+        </div>
+        
+        <!-- Botones de acción -->
+        <div class="action-buttons">
+          <button @click.prevent="undo" title="Deshacer último trazo">↩️</button>
+          <button @click.prevent="clearCanvas" title="Borrar todo">🗑️</button>
+        </div>
+      </div>
+
+      <!-- Imagen del diagrama -->
+      <img 
+        ref="cartImage"
+        :src="currentDiagramPath" 
+        :alt="cartTypeLabel || 'Golf Cart Diagram'" 
+        class="cart-diagram"
+        draggable="false"
+      />
+
+      <!-- Canvas de dibujo superpuesto -->
+      <canvas 
+        ref="drawingCanvas"
+        class="drawing-canvas"
+        :width="canvasWidth"
+        :height="canvasHeight"
+      ></canvas>
+
+      <!-- Marcadores de daños existentes -->
+      <div 
+        v-for="(damage, index) in damages" 
+        :key="`damage-${index}`"
+        class="damage-marker draggable"
+        :data-index="index"
+        :style="{ 
+          left: `${damage.x}%`, 
+          top: `${damage.y}%`
+        }"
+      >
+        <span class="marker-icon">❌</span>
+        <div class="marker-tooltip marker-tooltip-permanent">
+          <span class="marker-part-name">{{ damage.part }}</span>
+          <span class="marker-damage-type">({{ damage.type }})</span>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, ComponentPublicInstance } from 'vue'
-import interact from 'interactjs'
-import golfCart4Seater from '../assets/images/4seater.png'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import golfCart4Seater from '../assets/images/4seater.jpg'
 import golfCart6Seater from '../assets/images/6seater.png'
 
 // Definir interfaz para daños
@@ -48,15 +89,29 @@ interface Damage {
   quantity?: number
 }
 
+// Definir interfaz para CartTypeOption
 interface CartTypeOption {
   label: string
   value: string
   diagramPath: string
 }
 
+// Colores predefinidos sin etiquetas
+const colorOptions = [
+  { color: 'red' },
+  { color: 'lightgreen' },
+  { color: 'yellow' }
+]
+
+// Grosores de línea
+const lineWidths = [8]
+const currentLineWidth = ref(lineWidths[0])
+
+const currentColor = ref(colorOptions[0].color)
+
 const props = defineProps({
   cartType: { 
-    type: [Object, String], 
+    type: [Object as () => CartTypeOption, String], 
     required: true
   },
   damages: { 
@@ -66,238 +121,346 @@ const props = defineProps({
   diagramPath: {
     type: String,
     default: '../assets/images/4seater.png'
-  },
-  preserveDamagePositions: {
-    type: Boolean,
-    default: true
   }
 })
 
-const emit = defineEmits(['update-damage-position'])
+const emit = defineEmits([
+  'update-damage-position', 
+  'drawing-created'
+])
 
 const cartDiagramContainer = ref<HTMLDivElement | null>(null)
-const damageMarkerRefs = ref<Record<number, HTMLDivElement>>({})
+const cartImage = ref<HTMLImageElement | null>(null)
+const drawingCanvas = ref<HTMLCanvasElement | null>(null)
+const drawingContext = ref<CanvasRenderingContext2D | null>(null)
 
-const setDamageMarkerRef = (el: HTMLDivElement | null, index: number) => {
-  if (el) {
-    damageMarkerRefs.value[index] = el
+// Dimensiones del canvas
+const canvasWidth = ref(0)
+const canvasHeight = ref(0)
+
+// Calcular la ruta del diagrama actual
+const currentDiagramPath = computed(() => {
+  if (typeof props.cartType === 'string') {
+    return props.cartType.includes('4') ? golfCart4Seater : golfCart6Seater
   }
-}
+  return props.cartType?.diagramPath || golfCart4Seater
+})
 
+// Obtener label del tipo de carrito
 const cartTypeLabel = computed(() => {
-  if (props.cartType === null || props.cartType === undefined) {
-    return '4-Seater'  // Valor predeterminado
+  if (typeof props.cartType === 'string') {
+    return props.cartType.includes('4') ? '4 Seater' : '6 Seater'
   }
-  
-  if (typeof props.cartType === 'object') {
-    return (props.cartType as CartTypeOption)?.label || '4-Seater'
-  }
-  
-  return props.cartType
+  return props.cartType?.label || '4 Seater'
 })
 
-const cartImageSrc = computed(() => {
-  // Usar la ruta del diagrama si está disponible y es una ruta completa
-  if (props.diagramPath && props.diagramPath.startsWith('http')) {
-    return props.diagramPath
+// Selección de color
+const selectColor = (color: string) => {
+  currentColor.value = color
+  if (drawingContext.value) {
+    drawingContext.value.strokeStyle = color
   }
+}
+
+// Selección de grosor de línea
+const selectLineWidth = (width: number) => {
+  currentLineWidth.value = width
+  if (drawingContext.value) {
+    drawingContext.value.lineWidth = width
+  }
+}
+
+// Método para guardar dibujo como base64
+const saveDrawing = () => {
+  if (!drawingCanvas.value || !cartImage.value) return null
+
+  // Crear un nuevo canvas con alta resolución
+  const tempCanvas = document.createElement('canvas')
+  const maxWidth = 2000  // Límite de ancho para evitar problemas de rendimiento
+  const scaleFactor = Math.min(maxWidth / cartImage.value.naturalWidth, 1)
   
-  // Manejar caso nulo o undefined
-  if (props.cartType === null || props.cartType === undefined) {
-    return golfCart4Seater
-  }
+  tempCanvas.width = Math.floor(cartImage.value.naturalWidth * scaleFactor)
+  tempCanvas.height = Math.floor(cartImage.value.naturalHeight * scaleFactor)
   
-  // Lógica de respaldo para compatibilidad
-  const cartTypeValue = typeof props.cartType === 'object' 
-    ? (props.cartType as CartTypeOption)?.value 
-    : props.cartType
+  const tempContext = tempCanvas.getContext('2d')
+  if (!tempContext) return null
 
-  return cartTypeValue === '6_seaters' 
-    ? golfCart6Seater 
-    : golfCart4Seater
-})
+  // Dibujar la imagen original escalada
+  tempContext.drawImage(
+    cartImage.value, 
+    0, 
+    0, 
+    tempCanvas.width, 
+    tempCanvas.height
+  )
 
-const isCartSixSeater = computed(() => {
-  if (typeof props.cartType === 'object') {
-    return (props.cartType as CartTypeOption)?.value === '6_seaters'
-  }
-  return props.cartType === '6_seaters'
-})
+  // Dibujar el canvas de dibujo escalado
+  if (drawingCanvas.value) {
+    // Configurar estilo de dibujo
+    tempContext.strokeStyle = currentColor.value
+    tempContext.lineWidth = currentLineWidth.value
+    tempContext.lineCap = 'round'
+    tempContext.lineJoin = 'round'
 
-const setupDraggableMarkers = () => {
-  // Si preserveDamagePositions está desactivado, no hacer nada
-  if (!props.preserveDamagePositions) return
-
-  // Limpiar interacciones previas
-  Object.values(damageMarkerRefs.value).forEach(marker => {
-    const existingInteraction = interact(marker as unknown as HTMLElement)
-    if (existingInteraction) {
-      existingInteraction.unset()
+    // Copiar los trazos del canvas de dibujo
+    const sourceContext = drawingCanvas.value.getContext('2d')
+    if (sourceContext) {
+      const imageData = sourceContext.getImageData(
+        0, 
+        0, 
+        drawingCanvas.value.width, 
+        drawingCanvas.value.height
+      )
+      
+      // Dibujar cada trazo manualmente para mayor control
+      for (let x = 0; x < drawingCanvas.value.width; x++) {
+        for (let y = 0; y < drawingCanvas.value.height; y++) {
+          const index = (y * drawingCanvas.value.width + x) * 4
+          if (imageData.data[index + 3] > 0) {  // Si el pixel no es transparente
+            tempContext.fillStyle = `rgba(${imageData.data[index]}, ${imageData.data[index+1]}, ${imageData.data[index+2]}, 0.7)`
+            tempContext.fillRect(
+              x * (tempCanvas.width / drawingCanvas.value.width), 
+              y * (tempCanvas.height / drawingCanvas.value.height), 
+              tempCanvas.width / drawingCanvas.value.width, 
+              tempCanvas.height / drawingCanvas.value.height
+            )
+          }
+        }
+      }
     }
+  }
+
+  // Convertir a base64 con alta calidad
+  const base64Drawing = tempCanvas.toDataURL('image/png', 1.0)
+  emit('drawing-created', base64Drawing)
+  return base64Drawing
+}
+
+// Deshacer último trazo
+const undo = () => {
+  // Implementación pendiente
+  console.log('Undo not implemented yet')
+}
+
+// Borrar todo el canvas
+const clearCanvas = () => {
+  if (!drawingCanvas.value || !drawingContext.value) return
+
+  drawingContext.value.clearRect(0, 0, drawingCanvas.value.width, drawingCanvas.value.height)
+  saveDrawing()
+}
+
+// Configurar canvas de dibujo
+const setupDrawingCanvas = () => {
+  if (!drawingCanvas.value || !cartImage.value) return
+
+  // Ajustar dimensiones del canvas al tamaño de la imagen
+  canvasWidth.value = cartImage.value.offsetWidth
+  canvasHeight.value = cartImage.value.offsetHeight
+
+  drawingContext.value = drawingCanvas.value.getContext('2d')
+  if (!drawingContext.value) return
+
+  drawingContext.value.lineCap = 'round'
+  drawingContext.value.lineJoin = 'round'
+  drawingContext.value.lineWidth = currentLineWidth.value
+  drawingContext.value.strokeStyle = currentColor.value
+
+  let isDrawing = false
+  let lastX = 0
+  let lastY = 0
+
+  const drawPoint = (x: number, y: number) => {
+    if (!drawingContext.value) return
+
+    drawingContext.value.beginPath()
+    drawingContext.value.arc(x, y, currentLineWidth.value / 2, 0, Math.PI * 2)
+    drawingContext.value.fillStyle = currentColor.value
+    drawingContext.value.fill()
+  }
+
+  const drawLine = (fromX: number, fromY: number, toX: number, toY: number) => {
+    if (!drawingContext.value) return
+
+    drawingContext.value.beginPath()
+    drawingContext.value.moveTo(fromX, fromY)
+    drawingContext.value.lineTo(toX, toY)
+    drawingContext.value.stroke()
+  }
+
+  drawingCanvas.value.addEventListener('mousedown', (event) => {
+    // Prevenir propagación para evitar efectos no deseados
+    event.stopPropagation()
+    
+    isDrawing = true
+    const rect = drawingCanvas.value?.getBoundingClientRect()
+    if (!rect) return
+
+    lastX = event.clientX - rect.left
+    lastY = event.clientY - rect.top
+
+    // Dibujar punto inicial
+    drawPoint(lastX, lastY)
+    saveDrawing()
   })
 
-  // Configurar nuevas interacciones
-  interact('.draggable').draggable({
-    inertia: true,
-    modifiers: [
-      interact.modifiers.restrictRect({
-        restriction: 'parent',
-        elementRect: { top: 0, left: 0, bottom: 1, right: 1 }
-      })
-    ],
-    autoScroll: {
-      container: cartDiagramContainer.value || document.body,
-      margin: 50,
-      speed: 300
-    },
-    listeners: {
-      start(event) {
-        const target = event.target as HTMLElement
-        target.style.transition = 'none'
-        target.style.cursor = 'grabbing'
-        
-        // Almacenar posición inicial
-        target.dataset.initialX = target.style.left
-        target.dataset.initialY = target.style.top
-      },
-      move(event) {
-        const target = event.target as HTMLElement
-        const container = cartDiagramContainer.value
-        if (!container) return
+  drawingCanvas.value.addEventListener('mousemove', (event) => {
+    if (!isDrawing) return
 
-        const containerRect = container.getBoundingClientRect()
-        
-        // Usar offsetWidth y offsetHeight para mayor precisión
-        const containerWidth = container.offsetWidth
-        const containerHeight = container.offsetHeight
+    const rect = drawingCanvas.value?.getBoundingClientRect()
+    if (!rect) return
 
-        // Calcular posición relativa con mayor precisión
-        const relativeX = event.clientX - containerRect.left
-        const relativeY = event.clientY - containerRect.top
+    const currentX = event.clientX - rect.left
+    const currentY = event.clientY - rect.top
 
-        // Calcular porcentajes con redondeo
-        const x = Math.round((relativeX / containerWidth) * 10000) / 100
-        const y = Math.round((relativeY / containerHeight) * 10000) / 100
+    // Dibujar línea
+    drawLine(lastX, lastY, currentX, currentY)
 
-        // Limitar el movimiento dentro del contenedor
-        const clampedX = Math.max(0, Math.min(100, x))
-        const clampedY = Math.max(0, Math.min(100, y))
+    lastX = currentX
+    lastY = currentY
+  })
 
-        // Actualizar posición visual
-        target.style.left = `${clampedX}%`
-        target.style.top = `${clampedY}%`
+  drawingCanvas.value.addEventListener('mouseup', () => {
+    isDrawing = false
+    saveDrawing()
+  })
 
-        // Añadir transformación para centrar
-        target.style.transform = `translate(-50%, -50%)`
-
-        // Emitir actualización de posición
-        const index = parseInt(target.dataset.index || '0')
-        emit('update-damage-position', {
-          index,
-          x: clampedX,
-          y: clampedY
-        })
-      },
-      end(event) {
-        const target = event.target as HTMLElement
-        target.style.cursor = 'move'
-        target.style.transition = 'transform 0.2s ease-out'
-      }
-    },
-    cursorChecker: () => 'move'
+  drawingCanvas.value.addEventListener('mouseout', () => {
+    isDrawing = false
+    saveDrawing()
   })
 }
 
-// Configurar interacciones después de montar el componente
+// Configurar dimensiones y canvas al montar
 onMounted(async () => {
-  // Esperar a que se renderice el DOM
+  // Esperar a que la imagen se cargue completamente
   await nextTick()
-  
-  // Configurar marcadores
-  setupDraggableMarkers()
-})
 
-// Limpiar interacciones al desmontar
-onBeforeUnmount(() => {
-  Object.values(damageMarkerRefs.value).forEach(marker => {
-    const existingInteraction = interact(marker as unknown as HTMLElement)
-    if (existingInteraction) {
-      existingInteraction.unset()
+  if (cartImage.value) {
+    // Asegurar que la imagen esté completamente cargada
+    if (cartImage.value.complete) {
+      setupDrawingCanvas()
+    } else {
+      cartImage.value.onload = setupDrawingCanvas
     }
-  })
+  }
 })
 </script>
 
 <style scoped>
-.cart-diagram-container {
-  margin: 0 auto;
+.cart-diagram-annotations-container {
   position: relative;
   width: 100%;
-  max-width: 800px;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.color-convention {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+}
+
+.convention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.diagram-container {
+  position: relative;
+  width: 100%;
 }
 
 .cart-diagram {
   width: 100%;
   height: auto;
-  pointer-events: none;
+  z-index: 1;
+  position: relative;
+}
+
+.drawing-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.drawing-tools {
+  position: absolute;
+  top: 10px;
+  left: -70px;  /* Mover a la izquierda */
+  display: flex;
+  flex-direction: column;  /* Cambiar a vertical */
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 10px;
+  border-radius: 5px;
+  z-index: 20;
+}
+
+.color-picker {
+  display: flex;
+  flex-direction: column;  /* Cambiar a vertical */
+  gap: 10px;
+}
+
+.color-picker button {
+  width: 50px;
+  height: 30px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.color-picker button.active {
+  border-color: black;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;  /* Cambiar a vertical */
+  gap: 10px;
+}
+
+.action-buttons button {
+  font-size: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 .damage-marker {
   position: absolute;
-  width: 30px;
-  height: 30px;
-  background-color: rgba(255, 0, 0, 0.5);
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
   cursor: move;
-  touch-action: none;
-  will-change: transform;
-  left: 0;
-  top: 0;
   transform: translate(-50%, -50%);
-  z-index: 10;
-  transition: transform 0.2s ease-out;
+  z-index: 15;
 }
 
 .marker-icon {
-  font-size: 16px;
+  font-size: 20px;
 }
 
 .marker-tooltip {
   position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: black !important;
-  color: white !important;
-  padding: 2px !important;
-  border: none !important;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 5px;
+  border-radius: 3px;
+  font-size: 12px;
   white-space: nowrap;
-  font-size: 10px !important;
-  opacity: 1;
-  font-weight: normal !important;
-}
-
-.marker-tooltip-permanent {
-  opacity: 1;
-}
-
-.marker-part-name {
-  font-weight: normal !important;
-  color: white !important;
-}
-
-.marker-damage-type {
-  font-size: 10px;
-  color: white !important;  
-}
-
-.damage-marker:hover .marker-tooltip {
-  opacity: 1;
 }
 </style>

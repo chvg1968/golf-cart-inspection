@@ -170,8 +170,35 @@ const selectColor = (color: string) => {
   }
 }
 
-// Método para sobrescribir imagen base con marcas
-const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: string) => {
+// Método para guardar dibujo como base64
+const saveDrawing = async () => {
+  if (!drawingCanvas.value || !cartImage.value) return null
+
+  try {
+    // Convertir dibujo actual a base64
+    const currentDrawing = drawingCanvas.value.toDataURL('image/png')
+
+    // Sobrescribir marcas en imagen base
+    const combinedImage = await overwriteDrawingOnBaseImage(
+      cartImage.value.src, 
+      currentDrawing
+    )
+
+    // Emitir evento con marcas combinadas
+    emit('drawing-created', {
+      drawing: combinedImage,
+      cartType: props.cartType
+    })
+
+    return combinedImage
+  } catch (error) {
+    console.error('Error al guardar dibujo:', error)
+    return null
+  }
+}
+
+// Método para sobrescribir marcas en la imagen base
+const overwriteDrawingOnBaseImage = (baseImageSrc: string, newDrawing: string) => {
   return new Promise<string>((resolve, reject) => {
     // Crear canvas para combinar imágenes
     const canvas = document.createElement('canvas')
@@ -186,6 +213,7 @@ const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: st
     const baseImage = new Image()
     const newMarkImage = new Image()
 
+    // Manejar carga de imágenes
     baseImage.onload = () => {
       // Establecer dimensiones del canvas
       canvas.width = baseImage.width
@@ -202,73 +230,23 @@ const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: st
         
         // Convertir canvas a imagen base64
         const combinedImage = canvas.toDataURL('image/png')
-
-        // Guardar imagen sobrescrita
-        try {
-          // Usar API de sistema de archivos para sobrescribir
-          const fs = require('fs')
-          const path = require('path')
-
-          // Convertir base64 a buffer
-          const base64Data = combinedImage.replace(/^data:image\/png;base64,/, '')
-          
-          // Guardar archivo
-          fs.writeFile(baseImagePath, base64Data, 'base64', (err) => {
-            if (err) {
-              console.error('Error al guardar imagen:', err)
-              resolve(combinedImage)
-            } else {
-              console.log('Imagen sobrescrita:', baseImagePath)
-              resolve(combinedImage)
-            }
-          })
-        } catch (error) {
-          console.error('Error al sobrescribir imagen:', error)
-          resolve(combinedImage)
-        }
+        resolve(combinedImage)
       }
 
       newMarkImage.onerror = () => {
         // Si no hay nueva marca, devolver imagen base
-        resolve(baseImagePath)
+        resolve(baseImageSrc)
       }
 
-      newMarkImage.src = newMarking
+      newMarkImage.src = newDrawing
     }
 
     baseImage.onerror = () => {
       reject(new Error('No se pudo cargar la imagen base'))
     }
 
-    baseImage.src = baseImagePath
+    baseImage.src = baseImageSrc
   })
-}
-
-// Método para guardar dibujo como base64
-const saveDrawing = async () => {
-  if (!drawingCanvas.value || !cartImage.value) return null
-
-  try {
-    // Convertir dibujo actual a base64
-    const currentDrawing = drawingCanvas.value.toDataURL('image/png')
-
-    // Sobrescribir marcas en imagen base
-    const combinedImage = await overwriteBaseImageWithMarks(
-      cartImage.value.src, 
-      currentDrawing
-    )
-
-    // Emitir evento con marcas combinadas
-    emit('drawing-created', {
-      drawing: combinedImage,
-      cartType: props.cartType
-    })
-
-    return combinedImage
-  } catch (error) {
-    console.error('Error al guardar dibujo:', error)
-    return null
-  }
 }
 
 // Método para guardar estado del canvas

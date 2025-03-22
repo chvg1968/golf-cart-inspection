@@ -122,11 +122,57 @@
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
               :cart-type="cartTypeForDiagram"
+              :damages="damages"
+              @update-damage-position="updateDamagePosition"
               @drawing-created="handleDrawingCreated"
             />
           </div>
         </div>
 
+        <!-- Damage Records Table -->
+        <!-- <div class="column q-mt-md">
+          <div class="col-12">
+            <q-card flat bordered>
+              <q-card-section>
+                <div class="text-h6">Damage Records</div>
+                <div class="column q-col-gutter-md">
+                  <div class="col-12">
+                    <q-table 
+                      :rows="damages" 
+                      :columns="damageColumns"
+                      row-key="id"
+                      flat 
+                      bordered
+                      title-class="q-table__title"
+                    >
+                      <template v-slot:body-cell-actions="props">
+                        <q-td :props="props">
+                          <q-btn 
+                            flat 
+                            round 
+                            color="negative" 
+                            icon="delete" 
+                            @click="removeDamage(props.rowIndex)"
+                            class="pdf-buttons"
+                          />
+                        </q-td>
+                      </template>
+                    </q-table>
+                  </div>
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+        </div> -->
+
+        <!-- Damage Record Form Section -->
+        <!-- <div class="col-12 damage-record-form">
+          <DamageRecordForm 
+            :cart-parts="cartParts"
+            :damage-types="damageTypes"
+            @add="addDamage"
+          />
+        </div> -->
 
         <!-- Guest Observations -->
         <div class="col-12 col-md-6 offset-md-3">
@@ -236,31 +282,19 @@ const termsAccepted = ref<boolean>(false)
 
 const cartNumber = ref<string>('')
 
-// Declaración de referencias
+// Almacenar dibujos como base64
+const cartDiagramDrawing = ref<string | null>(null)
+
+// Manejo de imagen anotada
 const annotatedDiagramImage = ref<string | null>(null)
-const diagramMarkings = ref<Record<string, string>>({})
 
-// Método para guardar marcas de diagrama
-const saveDiagramMarking = (diagramPath: string, marking: string) => {
-  diagramMarkings.value[diagramPath] = marking
-  console.log('Marcas guardadas:', {
-    diagramPath,
-    hasMarking: !!marking
-  })
-}
-
-// Método para obtener marcas de diagrama previas
-const getPreviousDiagramMarking = (diagramPath: string) => {
-  return diagramMarkings.value[diagramPath] || null
+const handleDrawingCreated = (base64Image: string) => {
+  annotatedDiagramImage.value = base64Image
 }
 
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
 watch(selectedProperty, (newProperty) => {
   if (newProperty) {
-    // Restablecer marcas al cambiar de propiedad
-    diagramMarkings.value = {}
-    annotatedDiagramImage.value = null
-    
     const selectedProp = propertyOptions.value.find(prop => prop.id === newProperty.id)
     if (selectedProp) {
       // Actualizar Cart Number
@@ -280,10 +314,6 @@ watch(selectedProperty, (newProperty) => {
           diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
           value: cartTypeMatch.value 
         }
-
-        // Obtener marcas previas para este diagrama
-        const previousMarking = getPreviousDiagramMarking(cartTypeMatch.diagramPath)
-        annotatedDiagramImage.value = previousMarking
       } else {
         selectedCartType.value = defaultCartType
       }
@@ -298,48 +328,56 @@ watch(selectedProperty, (newProperty) => {
     // Resetear valores si no hay propiedad seleccionada
     cartNumber.value = ''
     selectedCartType.value = defaultCartType
-    diagramMarkings.value = {}
-    annotatedDiagramImage.value = null
   }
 }, { immediate: true })
 
 // Método para manejar la selección de Cart Type
 const onCartTypeSelect = (value: any | null) => {
   if (value) {
-    const diagramPath = value.diagramPath || '/default-diagram.svg'
-    
     selectedCartType.value = {
       id: value.id || 'default',
       name: value.name || 'Default Cart',
       label: value.label,
-      diagramPath: diagramPath,
+      diagramPath: value.diagramPath || '/default-diagram.svg',
       value: value.value
     }
-
-    // Obtener marcas previas para este diagrama
-    const previousMarking = getPreviousDiagramMarking(diagramPath)
-    annotatedDiagramImage.value = previousMarking
   } else {
     selectedCartType.value = defaultCartType
   }
-}
-
-// Método para manejar marcas creadas
-function handleDrawingCreated(drawingData: { drawing: string, cartType: string }) {
-  const { drawing, cartType } = drawingData
-  const diagramPath = selectedCartType.value?.diagramPath || '/default-diagram.svg'
-  
-  // Guardar marcas para el diagrama actual
-  saveDiagramMarking(diagramPath, drawing)
-  
-  // Actualizar imagen anotada
-  annotatedDiagramImage.value = drawing
 }
 
 // Asegurar que cart-type siempre tenga un valor de cadena
 const cartTypeForDiagram = computed(() => {
   return selectedCartType.value?.value || ''
 })
+
+// Definir columnas para la tabla de daños
+const damageColumns = [
+  { 
+    name: 'part', 
+    label: 'Part', 
+    field: (row: Damage) => row.part,
+    align: 'left' as const
+  },
+  { 
+    name: 'type', 
+    label: 'Damage Type', 
+    field: (row: Damage) => row.type,
+    align: 'left' as const
+  },
+  { 
+    name: 'quantity', 
+    label: 'Quantity', 
+    field: (row: Damage) => row.quantity || 1,
+    align: 'left' as const
+  },
+  { 
+    name: 'actions', 
+    label: 'Actions', 
+    field: 'actions',
+    align: 'center' as const
+  }
+]
 
 // Validación de formulario
 function validateForm(): boolean {
@@ -349,7 +387,7 @@ function validateForm(): boolean {
   const hasValidGuestInfo = !!(name && email && phone && date)
   const hasValidProperty = selectedProperty.value !== null
   const hasValidCartType = selectedCartType.value !== null
-  const hasValidDiagram = !!(annotatedDiagramImage.value || diagramMarkings.value[selectedCartType.value?.diagramPath || ''])
+  const hasValidDiagram = !!(annotatedDiagramImage.value || cartDiagramDrawing.value)
 
   console.log('Validación de formulario:', {
     guestInfo: hasValidGuestInfo,
@@ -372,6 +410,29 @@ const canDownloadPDF = computed(() => {
   console.log('Puede descargar PDF:', isValid)
   return isValid
 })
+
+// Función para añadir daño
+function addDamage(damage: Damage) {
+  damages.value.push(damage)
+}
+
+// Función para remover daño por índice
+function removeDamage(index: number) {
+  damages.value.splice(index, 1)
+}
+
+// Función para actualizar posición de daño
+function updateDamagePosition({ index, x, y }: { index: number, x: number, y: number }) {
+  if (damages.value[index]) {
+    damages.value[index].x = x
+    damages.value[index].y = y
+  }
+}
+
+// Función para crear dibujo
+function onDrawingCreated(drawing: string) {
+  cartDiagramDrawing.value = drawing
+}
 
 // Referencia al contenedor del formulario
 const formContainerRef = ref<HTMLElement>(document.createElement('div'))
@@ -403,15 +464,16 @@ function generatePDF(event: Event) {
     },
     selectedCartType: selectedCartType.value,
     cartNumber: cartNumber.value,
+    damages: damages.value,
     guestObservations: guestObservations.value,
     signature: signature.value,
-    // Usar última marca del tipo de carrito actual
-    cartDiagramDrawing: diagramMarkings.value[selectedCartType.value?.diagramPath || ''],
+    cartDiagramDrawing: cartDiagramDrawing.value,
     annotatedDiagramImage: annotatedDiagramImage.value
   }
 
   // Llamar al método de generación de PDF
   if (pdfGeneratorRef.value) {
+    // Usar método expuesto del componente PDFGenerator
     const pdfGenerator = pdfGeneratorRef.value as { downloadPDF: (data: any) => void }
     if (typeof pdfGenerator.downloadPDF === 'function') {
       pdfGenerator.downloadPDF(pdfData)
@@ -423,6 +485,13 @@ function generatePDF(event: Event) {
         position: 'top'
       })
     }
+  } else {
+    console.error('pdfGeneratorRef no está definido')
+    quasar.notify({
+      type: 'negative',
+      message: 'Referencia a generador de PDF no encontrada',
+      position: 'top'
+    })
   }
 }
 

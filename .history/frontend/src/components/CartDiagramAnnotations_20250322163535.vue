@@ -2,18 +2,18 @@
   <div class="cart-diagram-annotations-container">
     <!-- Convención de colores -->
     <div class="color-convention">
-      <h3 class="text-subtitle1">Color Reference:</h3>
+      <h3 class="text-h6">Color Reference:</h3>
       <div class="convention-item">
         <span class="color-dot" style="background-color: red;"></span>
-        <span class="text-caption">Scratches</span>
+        <span>Scratches</span>
       </div>
       <div class="convention-item">
-        <span class="color-dot" style="background-color: #00FF7F;"></span>
-        <span class="text-caption">Missing parts</span>
+        <span class="color-dot" style="background-color: green;"></span>
+        <span>Missing parts</span>
       </div>
       <div class="convention-item">
-        <span class="color-dot" style="background-color: #BF40BF;"></span>
-        <span class="text-caption">Damage/Bumps</span>
+        <span class="color-dot" style="background-color: yellow;"></span>
+        <span>Damage/Bumps</span>
       </div>
     </div>
 
@@ -100,8 +100,8 @@ interface CartTypeOption {
 // Colores predefinidos sin etiquetas
 const colorOptions = [
   { color: 'red' },
-  { color: '#00FF7F' },  // Spring Green
-  { color: '#BF40BF' }   // Bright Magenta
+  { color: 'green' },
+  { color: 'yellow' }
 ]
 
 // Grosores de línea
@@ -122,10 +122,6 @@ const props = defineProps({
   diagramPath: {
     type: String,
     default: '../assets/images/4seater.png'
-  },
-  previousDrawing: {
-    type: String,
-    default: null
   }
 })
 
@@ -170,105 +166,70 @@ const selectColor = (color: string) => {
   }
 }
 
-// Método para sobrescribir imagen base con marcas
-const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: string) => {
-  return new Promise<string>((resolve, reject) => {
-    // Crear canvas para combinar imágenes
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    
-    if (!ctx) {
-      reject(new Error('No se pudo crear el contexto del canvas'))
-      return
-    }
-
-    // Crear imágenes base y nueva marca
-    const baseImage = new Image()
-    const newMarkImage = new Image()
-
-    baseImage.onload = () => {
-      // Establecer dimensiones del canvas
-      canvas.width = baseImage.width
-      canvas.height = baseImage.height
-
-      // Dibujar imagen base
-      ctx.drawImage(baseImage, 0, 0)
-
-      // Dibujar nueva marca
-      newMarkImage.onload = () => {
-        // Dibujar nueva marca con transparencia
-        ctx.globalAlpha = 0.7  // Transparencia de la marca
-        ctx.drawImage(newMarkImage, 0, 0, canvas.width, canvas.height)
-        
-        // Convertir canvas a imagen base64
-        const combinedImage = canvas.toDataURL('image/png')
-
-        // Guardar imagen sobrescrita
-        try {
-          // Usar API de sistema de archivos para sobrescribir
-          const fs = require('fs')
-          const path = require('path')
-
-          // Convertir base64 a buffer
-          const base64Data = combinedImage.replace(/^data:image\/png;base64,/, '')
-          
-          // Guardar archivo
-          fs.writeFile(baseImagePath, base64Data, 'base64', (err) => {
-            if (err) {
-              console.error('Error al guardar imagen:', err)
-              resolve(combinedImage)
-            } else {
-              console.log('Imagen sobrescrita:', baseImagePath)
-              resolve(combinedImage)
-            }
-          })
-        } catch (error) {
-          console.error('Error al sobrescribir imagen:', error)
-          resolve(combinedImage)
-        }
-      }
-
-      newMarkImage.onerror = () => {
-        // Si no hay nueva marca, devolver imagen base
-        resolve(baseImagePath)
-      }
-
-      newMarkImage.src = newMarking
-    }
-
-    baseImage.onerror = () => {
-      reject(new Error('No se pudo cargar la imagen base'))
-    }
-
-    baseImage.src = baseImagePath
-  })
-}
-
 // Método para guardar dibujo como base64
-const saveDrawing = async () => {
+const saveDrawing = () => {
   if (!drawingCanvas.value || !cartImage.value) return null
 
-  try {
-    // Convertir dibujo actual a base64
-    const currentDrawing = drawingCanvas.value.toDataURL('image/png')
+  // Crear un nuevo canvas con alta resolución
+  const tempCanvas = document.createElement('canvas')
+  const maxWidth = 2000  // Límite de ancho para evitar problemas de rendimiento
+  const scaleFactor = Math.min(maxWidth / cartImage.value.naturalWidth, 1)
+  
+  tempCanvas.width = Math.floor(cartImage.value.naturalWidth * scaleFactor)
+  tempCanvas.height = Math.floor(cartImage.value.naturalHeight * scaleFactor)
+  
+  const tempContext = tempCanvas.getContext('2d')
+  if (!tempContext) return null
 
-    // Sobrescribir marcas en imagen base
-    const combinedImage = await overwriteBaseImageWithMarks(
-      cartImage.value.src, 
-      currentDrawing
-    )
+  // Dibujar la imagen original escalada
+  tempContext.drawImage(
+    cartImage.value, 
+    0, 
+    0, 
+    tempCanvas.width, 
+    tempCanvas.height
+  )
 
-    // Emitir evento con marcas combinadas
-    emit('drawing-created', {
-      drawing: combinedImage,
-      cartType: props.cartType
-    })
+  // Dibujar el canvas de dibujo escalado
+  if (drawingCanvas.value) {
+    // Configurar estilo de dibujo
+    tempContext.strokeStyle = currentColor.value
+    tempContext.lineWidth = currentLineWidth.value
+    tempContext.lineCap = 'round'
+    tempContext.lineJoin = 'round'
 
-    return combinedImage
-  } catch (error) {
-    console.error('Error al guardar dibujo:', error)
-    return null
+    // Copiar los trazos del canvas de dibujo
+    const sourceContext = drawingCanvas.value.getContext('2d')
+    if (sourceContext) {
+      const imageData = sourceContext.getImageData(
+        0, 
+        0, 
+        drawingCanvas.value.width, 
+        drawingCanvas.value.height
+      )
+      
+      // Dibujar cada trazo manualmente para mayor control
+      for (let x = 0; x < drawingCanvas.value.width; x++) {
+        for (let y = 0; y < drawingCanvas.value.height; y++) {
+          const index = (y * drawingCanvas.value.width + x) * 4
+          if (imageData.data[index + 3] > 0) {  // Si el pixel no es transparente
+            tempContext.fillStyle = `rgba(${imageData.data[index]}, ${imageData.data[index+1]}, ${imageData.data[index+2]}, 0.7)`
+            tempContext.fillRect(
+              x * (tempCanvas.width / drawingCanvas.value.width), 
+              y * (tempCanvas.height / drawingCanvas.value.height), 
+              tempCanvas.width / drawingCanvas.value.width, 
+              tempCanvas.height / drawingCanvas.value.height
+            )
+          }
+        }
+      }
+    }
   }
+
+  // Convertir a base64 con alta calidad
+  const base64Drawing = tempCanvas.toDataURL('image/png', 1.0)
+  emit('drawing-created', base64Drawing)
+  return base64Drawing
 }
 
 // Método para guardar estado del canvas
@@ -396,74 +357,26 @@ const setupDrawingCanvas = () => {
   })
 }
 
-// Método para cargar dibujo previo
-const loadPreviousDrawing = () => {
-  // Validar referencias antes de usar
-  if (
-    props.previousDrawing && 
-    drawingContext.value !== null && 
-    drawingCanvas.value !== null
-  ) {
-    const img = new Image()
-    img.onload = () => {
-      // Verificar referencias nuevamente antes de dibujar
-      if (
-        drawingContext.value !== null && 
-        drawingCanvas.value !== null
-      ) {
-        // Limpiar canvas actual
-        drawingContext.value.clearRect(
-          0, 
-          0, 
-          drawingCanvas.value.width, 
-          drawingCanvas.value.height
-        )
-        
-        // Dibujar imagen previa
-        drawingContext.value.drawImage(
-          img, 
-          0, 
-          0, 
-          drawingCanvas.value.width, 
-          drawingCanvas.value.height
-        )
-
-        console.log('Marcas previas cargadas para:', props.cartType)
-      }
-    }
-    img.src = props.previousDrawing
-  }
-}
-
 // Configurar dimensiones y canvas al montar
-onMounted(() => {
-  // Usar nextTick para asegurar renderizado
-  nextTick(() => {
-    if (cartImage.value) {
-      // Asegurar que la imagen esté completamente cargada
-      if (cartImage.value.complete) {
-        setupDrawingCanvas()
-        loadPreviousDrawing()
-      } else {
-        cartImage.value.onload = () => {
-          setupDrawingCanvas()
-          loadPreviousDrawing()
-        }
-      }
+onMounted(async () => {
+  // Esperar a que la imagen se cargue completamente
+  await nextTick()
+
+  if (cartImage.value) {
+    // Asegurar que la imagen esté completamente cargada
+    if (cartImage.value.complete) {
+      setupDrawingCanvas()
+    } else {
+      cartImage.value.onload = setupDrawingCanvas
     }
-  })
+  }
+
+  // Renderizar referencia de colores
+  renderColorReference()
 })
 
-// Colores con referencias
-// Método para renderizar referencia de colores
-const renderColorReference = () => {
-  if (!cartDiagramContainer.value) return
 
-  // Verificar si ya existe una referencia de color
-  const existingReference = cartDiagramContainer.value.querySelector('.color-reference')
-  if (existingReference) {
-    existingReference.remove()
-  }
+
 }
 </script>
 
@@ -477,35 +390,26 @@ const renderColorReference = () => {
 
 .color-convention {
   display: flex;
-  flex-direction: row;
   justify-content: center;
   align-items: center;
   gap: 20px;
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 10px;
   margin-bottom: 10px;
-}
-
-.color-convention h3 {
-  margin-right: 15px;
-  font-size: 14px;
-  font-weight: bold;
+  border-radius: 5px;
 }
 
 .convention-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .color-dot {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   display: inline-block;
-}
-
-.convention-item .text-caption {
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .diagram-container {

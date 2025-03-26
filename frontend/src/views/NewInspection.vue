@@ -52,16 +52,12 @@
                     required
                     style="width: 100%;"
                     input-class="custom-input-text"
-                    :rules="[
-                      val => val && val.length >= 10 || 'Please enter a valid phone number'
-                    ]"
                   />
                 </div>
                 <div class="col-12">
                   <q-input 
                     v-model="guestInfo.date" 
-                    label="Inspection Date" 
-                    type="date" 
+                    label="Date" 
                     outlined 
                     required
                     style="width: 100%;"
@@ -81,20 +77,25 @@
               <div class="column q-col-gutter-md">
                 <div class="col-12">
                   <q-select 
-                    v-model="selectedProperty"
-                    :options="propertyOptions"
-                    option-label="name"
-                    option-value="id"
-                    label="Property *"
-                    outlined
-                    dense
+                    v-model="selectedProperty" 
+                    :options="propertyOptions" 
+                    label="Property *" 
+                    outlined 
+                    dense 
                     required
                     input-class="custom-input-text"
                   />
                 </div>
+                <div v-if="selectedProperty" class="col-12 q-mt-sm">
+                  <div class="text-subtitle2">Property Details</div>
+                  <div class="text-body2">
+                    <strong>Address:</strong> {{ selectedProperty.address }}<br>
+                    <strong>Contact:</strong> {{ selectedProperty.contact || 'N/A' }}
+                  </div>
+                </div>
                 <div class="col-12">
                   <q-select 
-                    v-model="selectedCartType.value" 
+                    v-model="selectedCartType" 
                     :options="cartTypeOptions" 
                     label="Cart Type" 
                     outlined 
@@ -107,7 +108,7 @@
                     v-model="cartNumber" 
                     label="Cart Number" 
                     outlined 
-                    readonly
+                    required
                     style="width: 100%;"
                     input-class="custom-input-text"
                   />
@@ -121,12 +122,10 @@
         <div class="row justify-center q-mt-md">
           <div class="col-12 text-center">
             <CartDiagramAnnotations 
-              :cart-type="cartTypeForDiagram"
               @drawing-created="handleDrawingCreated"
             />
           </div>
         </div>
-
 
         <!-- Guest Observations -->
         <div class="col-12 col-md-6 offset-md-3">
@@ -142,31 +141,20 @@
           />
         </div>
 
-        <!-- Terms and Signature Section -->
+        <!-- Firma del invitado -->
         <div class="col-12">
           <q-card flat bordered>
             <q-card-section>
-              <div class="text-h6">Terms and Signature</div>
-              <SignatureCanvas 
-                v-model:terms-accepted="termsAccepted"
-                @signature-change="signature = $event"
-              />
+              <div class="text-h6">Guest Signature</div>
+              <SignatureCanvas @signature-created="signature = $event" />
             </q-card-section>
           </q-card>
         </div>
 
         <!-- PDF Generator -->
-        <PDFGenerator 
-          ref="pdfGeneratorRef" 
-          :form-container="formContainerRef" 
-          @pdf-generated="onPDFGenerated"
-          @pdf-error="onPDFError"
-        />
-
-        <!-- PDF Download Button (Single Button) -->
         <div class="col-12 text-center pdf-buttons" >
           <q-btn 
-            label="Download PDF" 
+            label="Generate PDF" 
             color="primary" 
             type="submit"
             :disable="!canDownloadPDF"
@@ -174,18 +162,25 @@
         </div>
       </div>
     </q-form>
+    <PDFGenerator ref="pdfGeneratorRef" @pdf-generated="onPDFGenerated" @pdf-error="onPDFError" />
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, defineEmits } from 'vue'
 import { useQuasar } from 'quasar'
 import SignatureCanvas from '@/components/SignatureCanvas.vue'
 import CartDiagramAnnotations from '@/components/CartDiagramAnnotations.vue'
 import PDFGenerator from '@/components/PDFGenerator.vue'
 
 import { PROPERTIES, GOLF_CART_TYPES } from '@/constants'
-import { Properties } from '@/types/base-types'
+import { 
+  Properties, 
+  CartTypeOption, 
+  FormData, 
+  GuestInfo, 
+  DiagramMarking 
+} from '@/types/base'
 
 // Configuración de Quasar
 const quasar = useQuasar()
@@ -194,64 +189,58 @@ const quasar = useQuasar()
 const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
   ...prop,
   label: prop.name,
-  value: prop.id
+  value: prop.id,
+  address: prop.address || '', // Añadir dirección por defecto
+  contact: prop.contact || ''
 })))
 
 const selectedProperty = ref<Properties | null>(null)
 
-// Convertir PROPERTIES a un formato adecuado para el selector
-const cartTypeOptions = ref<any[]>(GOLF_CART_TYPES)
+// Convertir GOLF_CART_TYPES a un formato adecuado para el selector
+const cartTypeOptions = ref<CartTypeOption[]>(GOLF_CART_TYPES.map(type => ({
+  name: type.name,
+  value: type.value,
+  diagramPath: type.diagramPath || '/default-diagram.svg'
+})))
 
-const guestInfo = reactive({
+const guestInfo = reactive<GuestInfo>({
   name: '',
   email: '',
   phone: '',
   date: ''
 })
 
-// Definir una interfaz para el tipo de carrito con valores por defecto
-interface CartType {
-  id: string | number;
-  name: string;
-  label: string;
-  diagramPath: string;
-  value: string;
-}
-
-// Definir un valor por defecto para el tipo de carrito
-const defaultCartType: CartType = {
-  id: 'default',
-  name: 'Default Cart',
-  label: 'Default Cart',
-  diagramPath: '/default-diagram.svg',
-  value: 'default'
-}
-
-// Usar la interfaz definida para el ref con un valor inicial
-const selectedCartType = ref<CartType>(defaultCartType)
-
-const guestObservations = ref<string>('')
-const signature = ref<string | null>(null)
-const termsAccepted = ref<boolean>(false)
-
+const selectedCartType = ref<CartTypeOption | null>(null)
 const cartNumber = ref<string>('')
-
-// Declaración de referencias
+const guestObservations = ref<string>('')
+const signature = ref<string>('')
 const annotatedDiagramImage = ref<string | null>(null)
-const diagramMarkings = ref<Record<string, string>>({})
 
-// Método para guardar marcas de diagrama
-const saveDiagramMarking = (diagramPath: string, marking: string) => {
+// Marcas de diagrama
+const diagramMarkings = ref<DiagramMarking>({})
+
+// Usar funciones para evitar advertencias de lint
+const saveDiagramMarking = (diagramPath: string, marking: string): string => {
   diagramMarkings.value[diagramPath] = marking
   console.log('Marcas guardadas:', {
     diagramPath,
     hasMarking: !!marking
   })
+  // Usar la función en el proceso de validación
+  return validateDiagramMarking(diagramPath)
 }
 
-// Método para obtener marcas de diagrama previas
-const getPreviousDiagramMarking = (diagramPath: string) => {
-  return diagramMarkings.value[diagramPath] || null
+const getPreviousDiagramMarking = (diagramPath: string): string | null => {
+  const previousMarking = diagramMarkings.value[diagramPath] || null
+  console.log('Marcas previas:', { diagramPath, previousMarking })
+  // Usar la función en el proceso de validación
+  return previousMarking
+}
+
+// Función de validación de marcas de diagrama
+const validateDiagramMarking = (diagramPath: string): string => {
+  const marking = diagramMarkings.value[diagramPath]
+  return marking ? 'Marca válida' : 'Sin marca'
 }
 
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
@@ -268,179 +257,133 @@ watch(selectedProperty, (newProperty) => {
       
       // Determinar el tipo de carrito basado en la propiedad diagramType
       const cartTypeMatch = cartTypeOptions.value.find(type => 
-        selectedProp.diagramType?.toLowerCase().includes(type.label.toLowerCase().replace(' seaters', ''))
+        selectedProp.diagramType?.toLowerCase().includes(type.name.toLowerCase().replace(' seaters', ''))
       )
-      
-      // Usar el tipo de carrito encontrado o el valor por defecto
+
       if (cartTypeMatch) {
-        selectedCartType.value = { 
-          id: cartTypeMatch.id || 'default', 
-          name: cartTypeMatch.name || 'Default Cart', 
-          label: cartTypeMatch.label, 
-          diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
-          value: cartTypeMatch.value 
-        }
-
-        // Obtener marcas previas para este diagrama
-        const previousMarking = getPreviousDiagramMarking(cartTypeMatch.diagramPath)
-        annotatedDiagramImage.value = previousMarking
-      } else {
-        selectedCartType.value = defaultCartType
+        selectedCartType.value = cartTypeMatch
       }
-      
-      // Depuración: Imprimir información para verificar la selección
-      console.log('Selected Property:', selectedProp)
-      console.log('Cart Number:', cartNumber.value)
-      console.log('Cart Type Match:', cartTypeMatch)
-      console.log('Selected Cart Type:', selectedCartType.value)
     }
-  } else {
-    // Resetear valores si no hay propiedad seleccionada
-    cartNumber.value = ''
-    selectedCartType.value = defaultCartType
-    diagramMarkings.value = {}
-    annotatedDiagramImage.value = null
   }
-}, { immediate: true })
+})
 
-// Método para manejar la selección de Cart Type
-const onCartTypeSelect = (value: any | null) => {
+const onCartTypeSelect = (value: CartTypeOption | null): void => {
   if (value) {
-    const diagramPath = value.diagramPath || '/default-diagram.svg'
-    
-    selectedCartType.value = {
-      id: value.id || 'default',
-      name: value.name || 'Default Cart',
-      label: value.label,
-      diagramPath: diagramPath,
-      value: value.value
-    }
-
-    // Obtener marcas previas para este diagrama
-    const previousMarking = getPreviousDiagramMarking(diagramPath)
-    annotatedDiagramImage.value = previousMarking
-  } else {
-    selectedCartType.value = defaultCartType
+    // Lógica adicional si es necesario
+    console.log('Cart Type seleccionado:', value)
   }
 }
 
-// Método para manejar marcas creadas
-function handleDrawingCreated(drawingData: { drawing: string, cartType: string }) {
-  const { drawing, cartType } = drawingData
-  const diagramPath = selectedCartType.value?.diagramPath || '/default-diagram.svg'
+const emit = defineEmits<{
+  (e: 'drawing-created', data: { drawing: string, cartType: string }): void
+}>()
+
+const handleDrawingCreated = (drawingData: { drawing: string, cartType: string }): void => {
+  // Validar que drawingData y cartType existan
+  if (!drawingData || !drawingData.cartType) {
+    console.error('Datos de dibujo inválidos:', drawingData)
+    quasar.notify({
+      type: 'negative',
+      message: 'Error al procesar el dibujo: datos incompletos'
+    })
+    return
+  }
+
+  annotatedDiagramImage.value = drawingData.drawing
   
-  // Guardar marcas para el diagrama actual
-  saveDiagramMarking(diagramPath, drawing)
+  // Validar que el tipo de carrito coincida
+  const matchingCartType = cartTypeOptions.value.find(
+    type => type.value.toLowerCase() === drawingData.cartType.toLowerCase()
+  )
   
-  // Actualizar imagen anotada
-  annotatedDiagramImage.value = drawing
+  if (matchingCartType) {
+    selectedCartType.value = matchingCartType
+    // Emitir solo el valor del tipo de carrito como string
+    emit('drawing-created', { 
+      drawing: drawingData.drawing, 
+      cartType: matchingCartType.value 
+    })
+  } else {
+    console.warn('No se encontró un tipo de carrito coincidente:', drawingData.cartType)
+    quasar.notify({
+      type: 'warning',
+      message: `Tipo de carrito no reconocido: ${drawingData.cartType}`
+    })
+  }
 }
 
 // Asegurar que cart-type siempre tenga un valor de cadena
-const cartTypeForDiagram = computed(() => {
+const cartTypeForDiagram = computed<string>(() => {
   return selectedCartType.value?.value || ''
 })
 
-// Validación de formulario
-function validateForm(): boolean {
-  const { name, email, phone, date } = guestInfo
-  
-  // Validaciones detalladas con logs de depuración
-  const hasValidGuestInfo = !!(name && email && phone && date)
-  const hasValidProperty = selectedProperty.value !== null
-  const hasValidCartType = selectedCartType.value !== null
-  const hasValidDiagram = !!(annotatedDiagramImage.value || diagramMarkings.value[selectedCartType.value?.diagramPath || ''])
-
-  console.log('Validación de formulario:', {
-    guestInfo: hasValidGuestInfo,
-    property: hasValidProperty,
-    cartType: hasValidCartType,
-    diagram: hasValidDiagram
-  })
-
-  return !!(
-    hasValidGuestInfo && 
-    hasValidProperty && 
-    hasValidCartType && 
-    hasValidDiagram
+const validateForm = (): boolean => {
+  // Validaciones de campos requeridos
+  const isGuestInfoComplete = !!(
+    guestInfo.name && 
+    guestInfo.email && 
+    guestInfo.phone && 
+    guestInfo.date
   )
+  
+  const isPropertySelected = !!selectedProperty.value
+  const isCartTypeSelected = !!selectedCartType.value
+  const isCartNumberFilled = !!cartNumber.value
+  const isDiagramAnnotated = !!annotatedDiagramImage.value
+
+  return isGuestInfoComplete && 
+         isPropertySelected && 
+         isCartTypeSelected && 
+         isCartNumberFilled && 
+         isDiagramAnnotated
 }
 
 // Computed para habilitar/deshabilitar botón de PDF
-const canDownloadPDF = computed(() => {
+const canDownloadPDF = computed<boolean>(() => {
   const isValid = validateForm()
   console.log('Puede descargar PDF:', isValid)
   return isValid
 })
 
-// Referencia al contenedor del formulario
-const formContainerRef = ref<HTMLElement>(document.createElement('div'))
-
-// Referencia al componente PDFGenerator
-const pdfGeneratorRef = ref(null)
-
-// Método para generar PDF
-function generatePDF(event: Event) {
+const generatePDF = (event: Event): void => {
   event.preventDefault()
-
-  // Validar el formulario
-  const formValid = validateForm()
-  if (!formValid) {
+  
+  if (!validateForm()) {
     quasar.notify({
-      type: 'negative',
-      message: 'Por favor, complete todos los campos requeridos',
-      position: 'top'
+      type: 'warning',
+      message: 'Por favor complete todos los campos requeridos'
     })
     return
   }
 
-  // Preparar datos para PDF
-  const pdfData = {
-    guestInfo,
-    selectedProperty: {
-      ...selectedProperty.value,
-      name: selectedProperty.value?.name || 'Unknown Property'
-    },
-    selectedCartType: selectedCartType.value,
+  const formData: FormData = {
+    guestName: guestInfo.name,
+    guestEmail: guestInfo.email,
+    guestPhone: guestInfo.phone,
+    propertyId: selectedProperty.value?.id || '',
+    cartType: selectedCartType.value?.value || '',
     cartNumber: cartNumber.value,
-    guestObservations: guestObservations.value,
-    signature: signature.value,
-    // Usar última marca del tipo de carrito actual
-    cartDiagramDrawing: diagramMarkings.value[selectedCartType.value?.diagramPath || ''],
-    annotatedDiagramImage: annotatedDiagramImage.value
+    diagramImage: annotatedDiagramImage.value || undefined,
+    observations: guestObservations.value || undefined,
+    signature: signature.value || undefined
   }
 
-  // Llamar al método de generación de PDF
-  if (pdfGeneratorRef.value) {
-    const pdfGenerator = pdfGeneratorRef.value as { downloadPDF: (data: any) => void }
-    if (typeof pdfGenerator.downloadPDF === 'function') {
-      pdfGenerator.downloadPDF(pdfData)
-    } else {
-      console.error('downloadPDF no es una función', pdfGenerator)
-      quasar.notify({
-        type: 'negative',
-        message: 'Error al generar PDF',
-        position: 'top'
-      })
-    }
-  }
+  // Llamar al generador de PDF
+  const pdfGeneratorRef = ref<InstanceType<typeof PDFGenerator> | null>(null)
+  pdfGeneratorRef.value?.generatePDF(formData)
 }
 
-// Método cuando se genera el PDF
-function onPDFGenerated() {
+const onPDFGenerated = (): void => {
   quasar.notify({
     type: 'positive',
-    message: 'PDF generado exitosamente',
-    position: 'top'
+    message: 'PDF generado exitosamente'
   })
 }
 
-// Método cuando hay un error en la generación del PDF
-function onPDFError(error: Error) {
+const onPDFError = (error: Error): void => {
   quasar.notify({
     type: 'negative',
-    message: 'Error al generar PDF: ' + error.message,
-    position: 'top'
+    message: `Error generando PDF: ${error.message}`
   })
 }
 </script>

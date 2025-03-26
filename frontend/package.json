@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.17",
+    "@supabase/supabase-js": "^2.49.1",
+    "@types/uuid": "^10.0.0",
     "axios": "^1.8.2",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.10.3",
@@ -19,7 +21,9 @@
     "jspdf": "^3.0.0",
     "quasar": "^2.18.1",
     "signature_pad": "^5.0.4",
-    "vue": "^3.5.13"
+    "uuid": "^11.1.0",
+    "vue": "^3.5.13",
+    "vue-toastification": "^2.0.0-rc.5"
   },
   "devDependencies": {
     "@quasar/app-vite": "^2.1.4",

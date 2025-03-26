@@ -77,25 +77,45 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import golfCart4Seater from '../assets/images/4seater.jpg'
-import golfCart6Seater from '../assets/images/6seater.png'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
+import { useQuasar } from 'quasar'
 
 // Definir interfaz para daños
-interface Damage {
-  x: number
-  y: number
-  part: string
+export interface Damage {
   type: string
+  location: string
+  x?: number
+  y?: number
+  part?: string
   quantity?: number
 }
 
 // Definir interfaz para CartTypeOption
-interface CartTypeOption {
-  label: string
+export interface CartTypeOption {
+  name: string
   value: string
-  diagramPath: string
+  diagramPath?: string
+  cartType?: string
 }
+
+// Definir props con tipos
+const props = withDefaults(defineProps<{
+  diagramPath?: string
+  damages?: Damage[]
+  previousDrawing?: string
+  cartType: string | CartTypeOption
+}>(), {
+  diagramPath: '../assets/images/4seater.png',
+  damages: () => [],
+  previousDrawing: '',
+  cartType: () => ({ name: '', value: '' })
+})
+
+// Definir emits con tipos
+const emit = defineEmits<{
+  (e: 'drawing-created', data: { drawing: string, cartType: string }): void
+  (e: 'update-damage-position', damage: Damage): void
+}>()
 
 // Colores predefinidos sin etiquetas
 const colorOptions = [
@@ -109,30 +129,6 @@ const lineWidths = [8]
 const currentLineWidth = ref(lineWidths[0])
 
 const currentColor = ref(colorOptions[0].color)
-
-const props = defineProps({
-  cartType: { 
-    type: [Object as () => CartTypeOption, String], 
-    required: true
-  },
-  damages: { 
-    type: Array as () => Damage[], 
-    default: () => [] 
-  },
-  diagramPath: {
-    type: String,
-    default: '../assets/images/4seater.png'
-  },
-  previousDrawing: {
-    type: String,
-    default: null
-  }
-})
-
-const emit = defineEmits([
-  'update-damage-position', 
-  'drawing-created'
-])
 
 const cartDiagramContainer = ref<HTMLDivElement | null>(null)
 const cartImage = ref<HTMLImageElement | null>(null)
@@ -149,9 +145,9 @@ const drawingHistory = ref<ImageData[]>([])
 // Calcular la ruta del diagrama actual
 const currentDiagramPath = computed(() => {
   if (typeof props.cartType === 'string') {
-    return props.cartType.includes('4') ? golfCart4Seater : golfCart6Seater
+    return props.cartType.includes('4') ? '../assets/images/4seater.jpg' : '../assets/images/6seater.png'
   }
-  return props.cartType?.diagramPath || golfCart4Seater
+  return props.cartType?.diagramPath || '../assets/images/4seater.jpg'
 })
 
 // Obtener label del tipo de carrito
@@ -159,7 +155,7 @@ const cartTypeLabel = computed(() => {
   if (typeof props.cartType === 'string') {
     return props.cartType.includes('4') ? '4 Seater' : '6 Seater'
   }
-  return props.cartType?.label || '4 Seater'
+  return props.cartType?.name || '4 Seater'
 })
 
 // Selección de color
@@ -433,6 +429,36 @@ const loadPreviousDrawing = () => {
     }
     img.src = props.previousDrawing
   }
+}
+
+// Método para manejar la creación de dibujos
+const handleDrawingCreated = (drawingData: { drawing: string, cartType: string }) => {
+  if (drawingData && drawingData.drawing && drawingData.cartType) {
+    console.log('Dibujo creado:', drawingData)
+    emit('drawing-created', {
+      drawing: drawingData.drawing,
+      cartType: drawingData.cartType
+    })
+    return true
+  }
+  return false
+}
+
+// Método para actualizar posición de daños
+const updateDamagePosition = (damage: Damage) => {
+  console.log('Actualizando posición de daño:', damage)
+  emit('update-damage-position', damage)
+}
+
+// Usar quasar para mostrar notificaciones
+const notifyDamageUpdate = (damage: Damage) => {
+  const quasar = useQuasar()
+  quasar.notify({
+    type: 'info',
+    message: `Daño actualizado: ${damage.type} en ${damage.location}`
+  })
+  updateDamagePosition(damage)
+  return damage
 }
 
 // Configurar dimensiones y canvas al montar

@@ -89,12 +89,45 @@
         throw new Error('No se encontró ningún formulario para generar PDF')
       }
 
-      // Validar contenido del formulario
-      const hasContent = form.textContent && form.textContent.trim().length > 0
-      if (!hasContent) {
+      // Validar contenido del formulario de manera más detallada
+      const checkFormContent = (element: HTMLElement): boolean => {
+        // Verificar si hay elementos visibles
+        const visibleElements = element.querySelectorAll('input, textarea, select, img, canvas')
+        
+        // Verificar si hay texto o elementos interactivos
+        const hasVisibleContent = Array.from(visibleElements).some(el => {
+          if (el instanceof HTMLInputElement) {
+            return el.value.trim().length > 0
+          }
+          if (el instanceof HTMLTextAreaElement) {
+            return el.value.trim().length > 0
+          }
+          if (el instanceof HTMLSelectElement) {
+            return el.value.trim().length > 0
+          }
+          if (el instanceof HTMLImageElement) {
+            return el.src && el.src.trim().length > 0
+          }
+          if (el instanceof HTMLCanvasElement) {
+            return el.width > 0 && el.height > 0
+          }
+          return false
+        })
+
+        console.log('Contenido del formulario:', {
+          visibleElements: visibleElements.length,
+          hasVisibleContent
+        })
+
+        return hasVisibleContent
+      }
+
+      // Verificar si hay contenido
+      if (!checkFormContent(form)) {
         $q.notify({
           type: 'warning',
           message: 'No hay contenido para generar PDF',
+          caption: 'Asegúrate de haber completado el formulario',
           position: 'top'
         })
         return

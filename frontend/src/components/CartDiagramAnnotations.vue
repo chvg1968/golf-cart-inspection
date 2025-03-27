@@ -200,11 +200,8 @@ const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: st
         ctx.globalAlpha = 0.7  // Transparencia de la marca
         ctx.drawImage(newMarkImage, 0, 0, canvas.width, canvas.height)
         
-        // Convertir canvas a imagen base64
-        const combinedImage = canvas.toDataURL('image/png')
-
         // Resolver con la imagen combinada
-        resolve(combinedImage)
+        resolve(canvas.toDataURL('image/png'))
       }
 
       newMarkImage.onerror = () => {

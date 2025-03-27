@@ -108,10 +108,6 @@ const colorOptions = [
   { color: '#BF40BF' }   // Bright Magenta
 ]
 
-// Grosores de línea
-const lineWidths = [8]
-const currentLineWidth = ref(lineWidths[0])
-
 const currentColor = ref(colorOptions[0].color)
 
 const props = defineProps({
@@ -175,78 +171,127 @@ const selectColor = (color: string) => {
 }
 
 // Método para sobrescribir imagen base con marcas
-const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: string) => {
+const overwriteBaseImageWithMarks = (baseImagePath: string, newMarking: string): Promise<string> => {
   return new Promise<string>((resolve, reject) => {
-    // Crear canvas para combinar imágenes
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
+    // Crear imagen base
+    const baseImage = new Image()
     
-    if (!ctx) {
-      reject(new Error('No se pudo crear el contexto del canvas'))
-      return
+    // Crear imagen de marcas
+    const markingsImage = new Image()
+    
+    // Configurar manejadores de errores más robustos
+    const handleError = (source: string) => (event: Event | string) => {
+      console.error(`Error cargando ${source}:`, event)
+      reject(new Error(`No se pudo cargar ${source}`))
     }
 
-    // Crear imágenes base y nueva marca
-    const baseImage = new Image()
-    const newMarkImage = new Image()
+    baseImage.onerror = handleError('imagen base') as OnErrorEventHandler
+    markingsImage.onerror = handleError('imagen de marcas') as OnErrorEventHandler
 
+    // Configurar manejador de carga de imagen base
     baseImage.onload = () => {
-      // Establecer dimensiones del canvas
-      canvas.width = baseImage.width
-      canvas.height = baseImage.height
+      // Verificar que la imagen de marcas esté definida
+      if (!newMarking) {
+        resolve(baseImagePath)
+        return
+      }
+
+      // Cargar imagen de marcas
+      markingsImage.src = newMarking
+    }
+
+    // Configurar manejador de carga de imagen de marcas
+    markingsImage.onload = () => {
+      // Crear canvas temporal para combinar imágenes
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = baseImage.width
+      tempCanvas.height = baseImage.height
+
+      const ctx = tempCanvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('No se pudo obtener contexto del canvas'))
+        return
+      }
 
       // Dibujar imagen base
-      ctx.drawImage(baseImage, 0, 0)
+      ctx.drawImage(baseImage, 0, 0, baseImage.width, baseImage.height)
+      
+      // Dibujar imagen de marcas con transparencia
+      ctx.globalAlpha = 0.7  // Ajustar opacidad de marcas
+      ctx.drawImage(markingsImage, 0, 0, baseImage.width, baseImage.height)
 
-      // Dibujar nueva marca
-      newMarkImage.onload = () => {
-        // Dibujar nueva marca con transparencia
-        ctx.globalAlpha = 0.7  // Transparencia de la marca
-        ctx.drawImage(newMarkImage, 0, 0, canvas.width, canvas.height)
-        
-        // Resolver con la imagen combinada
-        resolve(canvas.toDataURL('image/png'))
-      }
-
-      newMarkImage.onerror = () => {
-        // Si no hay nueva marca, devolver imagen base
-        resolve(baseImagePath)
-      }
-
-      newMarkImage.src = newMarking
+      // Convertir canvas a imagen base64
+      const combinedImageUrl = tempCanvas.toDataURL('image/png')
+      
+      resolve(combinedImageUrl)
     }
 
-    baseImage.onerror = () => {
-      reject(new Error('No se pudo cargar la imagen base'))
-    }
-
+    // Iniciar carga de imagen base
     baseImage.src = baseImagePath
   })
 }
 
-// Método para guardar dibujo como base64
-const saveDrawing = async () => {
-  if (!drawingCanvas.value || !cartImage.value) return null
+// Método para guardar dibujo
+const saveDrawing = (): string | null => {
+  if (!drawingCanvas.value) return null
 
-  try {
-    // Convertir dibujo actual a base64
-    const currentDrawing = drawingCanvas.value.toDataURL('image/png')
+  // Convertir canvas a imagen base64
+  const drawingDataUrl = drawingCanvas.value.toDataURL('image/png')
+  
+  // Almacenar en localStorage
+  localStorage.setItem(
+    `drawing_${props.diagramPath}`, 
+    drawingDataUrl
+  )
 
-    // Sobrescribir marcas en imagen base
-    const combinedImage = await overwriteBaseImageWithMarks(
-      cartImage.value.src, 
-      currentDrawing
-    )
+  return drawingDataUrl
+}
 
-    // Emitir evento con marcas combinadas
-    emit('drawing-created', {
-      drawing: combinedImage,
-      cartType: props.cartType
-    })
+// Método para cargar estado previo del canvas
+const loadPreviousCanvasState = () => {
+  if (!drawingCanvas.value || !drawingContext.value) return
 
-    return combinedImage
-  } catch (error) {
-    return null
+  const savedStateJson = localStorage.getItem(
+    `canvas_state_${props.diagramPath}`
+  )
+
+  if (savedStateJson) {
+    try {
+      const savedState = JSON.parse(savedStateJson)
+      drawingContext.value.putImageData(savedState, 0, 0)
+    } catch (error) {
+      console.error('Error al cargar estado del canvas:', error)
+    }
+  }
+}
+
+// Método para cargar dibujo previo
+const loadPreviousDrawing = () => {
+  if (!drawingCanvas.value || !drawingContext.value) return
+
+  const savedDrawing = localStorage.getItem(
+    `drawing_${props.diagramPath}`
+  )
+
+  if (savedDrawing) {
+    const img = new Image()
+    img.onload = () => {
+      drawingContext.value?.clearRect(
+        0, 
+        0, 
+        drawingCanvas.value?.width || 0, 
+        drawingCanvas.value?.height || 0
+      )
+      
+      drawingContext.value?.drawImage(
+        img, 
+        0, 
+        0, 
+        drawingCanvas.value?.width || 0, 
+        drawingCanvas.value?.height || 0
+      )
+    }
+    img.src = savedDrawing
   }
 }
 
@@ -372,24 +417,6 @@ const saveCanvasState = () => {
   )
 }
 
-// Método para cargar estado previo del canvas
-const loadPreviousDrawing = () => {
-  if (!drawingCanvas.value || !drawingContext.value) return
-
-  const savedStateJson = localStorage.getItem(
-    `canvas_state_${props.diagramPath}`
-  )
-
-  if (savedStateJson) {
-    try {
-      const savedState = JSON.parse(savedStateJson)
-      drawingContext.value.putImageData(savedState, 0, 0)
-    } catch (error) {
-      console.error('Error al cargar estado del canvas:', error)
-    }
-  }
-}
-
 // Deshacer último trazo
 const undo = () => {
   if (!drawingCanvas.value || !drawingContext.value) return
@@ -428,11 +455,11 @@ onMounted(() => {
       // Asegurar que la imagen esté completamente cargada
       if (cartImage.value.complete) {
         setupDrawingCanvas()
-        loadPreviousDrawing()
+        loadPreviousCanvasState()
       } else {
         cartImage.value.onload = () => {
           setupDrawingCanvas()
-          loadPreviousDrawing()
+          loadPreviousCanvasState()
         }
       }
     }

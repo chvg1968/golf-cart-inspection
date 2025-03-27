@@ -122,10 +122,12 @@
       document.body.removeChild(tempContainer)
 
       // Depuración de imagen
+      const dataURL = canvas.toDataURL('image/png')
       console.log('Canvas image details:', {
         width: canvas.width,
         height: canvas.height,
-        dataURL: canvas.toDataURL().slice(0, 100) + '...' // Mostrar inicio del DataURL
+        dataURLLength: dataURL.length,
+        dataURLStart: dataURL.slice(0, 100) + '...'
       })
 
       // Generar PDF
@@ -135,27 +137,44 @@
         format: 'a4'
       })
 
-      // Método alternativo de conversión de imagen
-      const img = new Image()
-      img.src = canvas.toDataURL('image/png')
-      
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-      })
+      // Método directo de añadir imagen
+      try {
+        const pdfWidth = pdf.internal.pageSize.getWidth()
+        const pdfHeight = pdf.internal.pageSize.getHeight()
+        
+        pdf.addImage({
+          imageData: dataURL,
+          format: 'PNG',
+          x: 0,
+          y: 0,
+          width: pdfWidth,
+          height: pdfHeight
+        })
+      } catch (imageError) {
+        console.error('Error añadiendo imagen al PDF:', imageError)
+        
+        // Intentar método alternativo
+        try {
+          const img = new Image()
+          img.src = dataURL
+          
+          await new Promise((resolve, reject) => {
+            img.onload = resolve
+            img.onerror = (e) => {
+              console.error('Error cargando imagen:', e)
+              reject(e)
+            }
+          })
 
-      // Añadir imagen al PDF
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      
-      pdf.addImage({
-        imageData: img,
-        format: 'PNG',
-        x: 0,
-        y: 0,
-        width: pdfWidth,
-        height: pdfHeight
-      })
+          const pdfWidth = pdf.internal.pageSize.getWidth()
+          const pdfHeight = pdf.internal.pageSize.getHeight()
+          
+          pdf.addImage(img, 'PNG', 0, 0, pdfWidth, pdfHeight)
+        } catch (fallbackError) {
+          console.error('Error en método alternativo:', fallbackError)
+          throw fallbackError
+        }
+      }
 
       // Generar nombre de archivo descriptivo
       const fileName = generateFileName(props.selectedProperty, props.guestInformation)
@@ -188,6 +207,15 @@
 
     } catch (error) {
       console.error('Error generando PDF:', error)
+      
+      // Notificación de error detallada
+      $q.notify({
+        type: 'negative',
+        message: 'Error al generar PDF',
+        caption: error instanceof Error ? error.message : 'Error desconocido',
+        position: 'top'
+      })
+
       emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))
     }
   }

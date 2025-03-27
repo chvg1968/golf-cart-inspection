@@ -159,6 +159,9 @@
         <PDFGenerator 
           ref="pdfGeneratorRef" 
           :form-container="formContainerRef" 
+          :guest-information="guestInfo"
+          :selected-property="selectedProperty"
+          :annotated-diagram-image="annotatedDiagramImage"
           @pdf-generated="onPDFGenerated"
           @pdf-error="onPDFError"
         />
@@ -178,14 +181,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, defineAsyncComponent } from 'vue'
 import { useQuasar } from 'quasar'
 import SignatureCanvas from '@/components/SignatureCanvas.vue'
 import CartDiagramAnnotations from '@/components/CartDiagramAnnotations.vue'
-import PDFGenerator from '@/components/PDFGenerator.vue'
 
+// Importar tipos correctamente
+import type { 
+  GuestInfo, 
+  Properties, 
+  CartTypeOption 
+} from '@/types/base-types'
+
+const PDFGenerator = defineAsyncComponent(() => 
+  import('@/components/PDFGenerator.vue')
+)
+
+// Definir interfaz de props para PDFGenerator
+interface PDFGeneratorProps {
+  formContainer: HTMLElement
+  guestInformation: GuestInfo
+  selectedProperty: Properties | null
+  annotatedDiagramImage: string | null
+  'onPdf-generated'?: () => void
+  'onPdf-error'?: (error: Error) => void
+}
+
+// Importaciones de constantes
 import { PROPERTIES, GOLF_CART_TYPES } from '@/constants'
-import { Properties } from '@/types/base-types'
 
 // Configuración de Quasar
 const quasar = useQuasar()
@@ -242,10 +265,12 @@ const diagramMarkings = ref<Record<string, string>>({})
 
 // Método para guardar marcas de diagrama
 const saveDiagramMarking = (diagramPath: string, marking: string) => {
-  diagramMarkings.value[diagramPath] = marking
+  diagramMarkings.value[diagramPath] = marking;
+  diagramMarkings.value = {
+    ...diagramMarkings.value,
     diagramPath,
-    hasMarking: !!marking
-  })
+    hasMarking: marking ? 'true' : 'false'  // Convertir a cadena
+  };
 }
 
 // Método para obtener marcas de diagrama previas
@@ -346,18 +371,20 @@ function validateForm(): boolean {
   const hasValidCartType = selectedCartType.value !== null
   const hasValidDiagram = !!(annotatedDiagramImage.value || diagramMarkings.value[selectedCartType.value?.diagramPath || ''])
 
+  // Registrar estado de validación
+  console.log('Validación de formulario:', {
     guestInfo: hasValidGuestInfo,
     property: hasValidProperty,
     cartType: hasValidCartType,
     diagram: hasValidDiagram
-  })
+  });
 
   return !!(
     hasValidGuestInfo && 
     hasValidProperty && 
     hasValidCartType && 
     hasValidDiagram
-  )
+  );
 }
 
 // Computed para habilitar/deshabilitar botón de PDF

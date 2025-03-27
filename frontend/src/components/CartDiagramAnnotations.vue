@@ -53,6 +53,10 @@
         class="drawing-canvas"
         :width="canvasWidth"
         :height="canvasHeight"
+        role="graphics-document"
+        aria-label="Cart Diagram Drawing Canvas"
+        tabindex="0"
+        aria-roledescription="Diagrama interactivo para marcar daños"
       ></canvas>
 
       <!-- Marcadores de daños existentes -->
@@ -246,17 +250,144 @@ const saveDrawing = async () => {
   }
 }
 
+// Configurar canvas de dibujo
+const setupDrawingCanvas = () => {
+  const canvas = drawingCanvas.value
+  const cartImage = cartImage.value
+
+  if (!canvas || !cartImage) {
+    console.error('Canvas o imagen no encontrados')
+    return
+  }
+
+  // Ajustar dimensiones del canvas al tamaño de la imagen
+  canvasWidth.value = cartImage.offsetWidth
+  canvasHeight.value = cartImage.offsetHeight
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    console.error('No se pudo obtener el contexto del canvas')
+    return
+  }
+
+  drawingContext.value = ctx
+  drawingContext.value.lineCap = 'round'
+  drawingContext.value.lineJoin = 'round'
+  drawingContext.value.lineWidth = 3
+  drawingContext.value.strokeStyle = currentColor.value
+
+  // Configuración de atributos de accesibilidad
+  canvas.setAttribute('role', 'graphics-document')
+  canvas.setAttribute('aria-label', 'Cart Diagram Drawing Canvas')
+  canvas.setAttribute('tabindex', '0')
+  canvas.setAttribute('aria-roledescription', 'Diagrama interactivo para marcar daños')
+
+  // Gestión de foco
+  canvas.addEventListener('focus', () => {
+    canvas.style.outline = '2px solid blue'
+  })
+
+  canvas.addEventListener('blur', () => {
+    canvas.style.outline = 'none'
+  })
+
+  let isDrawing = false
+  let lastX = 0
+  let lastY = 0
+
+  const startDrawing = (e: MouseEvent | TouchEvent) => {
+    isDrawing = true
+    const rect = canvas.getBoundingClientRect()
+    const clientX = 'touches' in e 
+      ? (e as TouchEvent).touches[0].clientX 
+      : (e as MouseEvent).clientX
+    const clientY = 'touches' in e 
+      ? (e as TouchEvent).touches[0].clientY 
+      : (e as MouseEvent).clientY
+
+    lastX = clientX - rect.left
+    lastY = clientY - rect.top
+  }
+
+  const draw = (e: MouseEvent | TouchEvent) => {
+    if (!isDrawing || !drawingContext.value) return
+
+    const rect = canvas.getBoundingClientRect()
+    const clientX = 'touches' in e 
+      ? (e as TouchEvent).touches[0].clientX 
+      : (e as MouseEvent).clientX
+    const clientY = 'touches' in e 
+      ? (e as TouchEvent).touches[0].clientY 
+      : (e as MouseEvent).clientY
+
+    const x = clientX - rect.left
+    const y = clientY - rect.top
+
+    drawingContext.value.beginPath()
+    drawingContext.value.moveTo(lastX, lastY)
+    drawingContext.value.lineTo(x, y)
+    drawingContext.value.strokeStyle = currentColor.value
+    drawingContext.value.lineWidth = 3
+    drawingContext.value.lineCap = 'round'
+    drawingContext.value.stroke()
+
+    lastX = x
+    lastY = y
+  }
+
+  const stopDrawing = () => {
+    isDrawing = false
+    saveDrawing()
+    saveCanvasState()
+  }
+
+  // Eventos para mouse
+  canvas.addEventListener('mousedown', startDrawing)
+  canvas.addEventListener('mousemove', draw)
+  canvas.addEventListener('mouseup', stopDrawing)
+  canvas.addEventListener('mouseout', stopDrawing)
+
+  // Eventos para touch
+  canvas.addEventListener('touchstart', startDrawing)
+  canvas.addEventListener('touchmove', draw)
+  canvas.addEventListener('touchend', stopDrawing)
+  canvas.addEventListener('touchcancel', stopDrawing)
+}
+
 // Método para guardar estado del canvas
 const saveCanvasState = () => {
   if (!drawingCanvas.value || !drawingContext.value) return
-
+  
   const imageData = drawingContext.value.getImageData(
     0, 
     0, 
     drawingCanvas.value.width, 
     drawingCanvas.value.height
   )
-  drawingHistory.value.push(imageData)
+  
+  // Almacenar estado en localStorage
+  localStorage.setItem(
+    `canvas_state_${props.diagramPath}`, 
+    JSON.stringify(imageData)
+  )
+}
+
+// Método para cargar estado previo del canvas
+const loadPreviousDrawing = () => {
+  if (!drawingCanvas.value || !drawingContext.value) return
+
+  const savedStateJson = localStorage.getItem(
+    `canvas_state_${props.diagramPath}`
+  )
+
+  if (savedStateJson) {
+    try {
+      const savedState = JSON.parse(savedStateJson)
+      drawingContext.value.putImageData(savedState, 0, 0)
+    } catch (error) {
+      console.error('Error al cargar estado del canvas:', error)
+    }
+  }
 }
 
 // Deshacer último trazo
@@ -289,126 +420,6 @@ const clearCanvas = () => {
   saveDrawing()
 }
 
-// Configurar canvas de dibujo
-const setupDrawingCanvas = () => {
-  if (!drawingCanvas.value || !cartImage.value) return
-
-  // Ajustar dimensiones del canvas al tamaño de la imagen
-  canvasWidth.value = cartImage.value.offsetWidth
-  canvasHeight.value = cartImage.value.offsetHeight
-
-  drawingContext.value = drawingCanvas.value.getContext('2d')
-  if (!drawingContext.value) return
-
-  drawingContext.value.lineCap = 'round'
-  drawingContext.value.lineJoin = 'round'
-  drawingContext.value.lineWidth = currentLineWidth.value
-  drawingContext.value.strokeStyle = currentColor.value
-
-  let isDrawing = false
-  let lastX = 0
-  let lastY = 0
-
-  const drawPoint = (x: number, y: number) => {
-    if (!drawingContext.value) return
-
-    drawingContext.value.beginPath()
-    drawingContext.value.arc(x, y, currentLineWidth.value / 2, 0, Math.PI * 2)
-    drawingContext.value.fillStyle = currentColor.value
-    drawingContext.value.fill()
-  }
-
-  const drawLine = (fromX: number, fromY: number, toX: number, toY: number) => {
-    if (!drawingContext.value) return
-
-    drawingContext.value.beginPath()
-    drawingContext.value.moveTo(fromX, fromY)
-    drawingContext.value.lineTo(toX, toY)
-    drawingContext.value.stroke()
-  }
-
-  drawingCanvas.value.addEventListener('mousedown', (event) => {
-    // Prevenir propagación para evitar efectos no deseados
-    event.stopPropagation()
-    
-    isDrawing = true
-    const rect = drawingCanvas.value?.getBoundingClientRect()
-    if (!rect) return
-
-    lastX = event.clientX - rect.left
-    lastY = event.clientY - rect.top
-
-    // Dibujar punto inicial
-    drawPoint(lastX, lastY)
-    saveCanvasState()
-    saveDrawing()
-  })
-
-  drawingCanvas.value.addEventListener('mousemove', (event) => {
-    if (!isDrawing) return
-
-    const rect = drawingCanvas.value?.getBoundingClientRect()
-    if (!rect) return
-
-    const currentX = event.clientX - rect.left
-    const currentY = event.clientY - rect.top
-
-    // Dibujar línea
-    drawLine(lastX, lastY, currentX, currentY)
-
-    lastX = currentX
-    lastY = currentY
-  })
-
-  drawingCanvas.value.addEventListener('mouseup', () => {
-    isDrawing = false
-    saveDrawing()
-  })
-
-  drawingCanvas.value.addEventListener('mouseout', () => {
-    isDrawing = false
-    saveDrawing()
-  })
-}
-
-// Método para cargar dibujo previo
-const loadPreviousDrawing = () => {
-  // Validar referencias antes de usar
-  if (
-    props.previousDrawing && 
-    drawingContext.value !== null && 
-    drawingCanvas.value !== null
-  ) {
-    const img = new Image()
-    img.onload = () => {
-      // Verificar referencias nuevamente antes de dibujar
-      if (
-        drawingContext.value !== null && 
-        drawingCanvas.value !== null
-      ) {
-        // Limpiar canvas actual
-        drawingContext.value.clearRect(
-          0, 
-          0, 
-          drawingCanvas.value.width, 
-          drawingCanvas.value.height
-        )
-        
-        // Dibujar imagen previa
-        drawingContext.value.drawImage(
-          img, 
-          0, 
-          0, 
-          drawingCanvas.value.width, 
-          drawingCanvas.value.height
-        )
-
-      }
-    }
-    img.src = props.previousDrawing
-  }
-}
-
 // Configurar dimensiones y canvas al montar
 onMounted(() => {
   // Usar nextTick para asegurar renderizado
@@ -427,18 +438,6 @@ onMounted(() => {
     }
   })
 })
-
-// Colores con referencias
-// Método para renderizar referencia de colores
-const renderColorReference = () => {
-  if (!cartDiagramContainer.value) return
-
-  // Verificar si ya existe una referencia de color
-  const existingReference = cartDiagramContainer.value.querySelector('.color-reference')
-  if (existingReference) {
-    existingReference.remove()
-  }
-}
 </script>
 
 <style scoped>

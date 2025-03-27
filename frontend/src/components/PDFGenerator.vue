@@ -208,8 +208,30 @@
     }
   }
 
+  // Método para descargar PDF
+  const downloadPDF = async (pdfData?: any) => {
+    try {
+      // Si se proporcionan datos, podrían usarse para validación futura
+      if (pdfData) {
+        console.log('Datos de PDF recibidos:', pdfData)
+      }
+
+      // Llamar al método de generación de PDF
+      await generatePDF()
+    } catch (error) {
+      console.error('Error al generar PDF:', error)
+      $q.notify({
+        type: 'negative',
+        message: 'No se pudo generar el PDF',
+        caption: error instanceof Error ? error.message : 'Error desconocido',
+        position: 'top'
+      })
+    }
+  }
+
   // Exponer método para ser llamado desde el padre
   defineExpose({ 
-    generatePDF 
+    generatePDF,
+    downloadPDF  // Mantener downloadPDF por compatibilidad
   })
   </script>

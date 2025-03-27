@@ -5,32 +5,17 @@
   </template>
   
   <script setup lang="ts">
-  import { defineProps, defineEmits, defineExpose } from 'vue'
+  import { ref, defineProps, defineEmits, defineExpose, computed } from 'vue'
   import { useQuasar } from 'quasar'
   import html2canvas from 'html2canvas'
   import jsPDF from 'jspdf'
 
   import type { 
-    Properties, 
     GuestInfo, 
+    Properties, 
     CartTypeOption, 
-    Damage
+    Damage 
   } from '@/types/base-types'
-
-  const $q = useQuasar()
-
-  // Definir tipos para props y emits
-  const props = defineProps<{
-    formContainer: HTMLElement
-    guestInformation: any
-    selectedProperty: Properties | null
-    annotatedDiagramImage: any
-  }>()
-
-  const emit = defineEmits<{
-    (e: 'pdf-generated'): void
-    (e: 'pdf-error', error: Error): void
-  }>()
 
   // Definir un tipo para los datos del PDF
   interface PDFData {
@@ -43,23 +28,19 @@
     cartDiagramDrawing?: string
   }
 
-  // Método para generar nombre de archivo descriptivo
-  function generateFileName(
-    selectedProperty?: Properties | null, 
-    guestInfo?: { name?: string }
-  ): string {
-    // Sanitizar nombres para usar en archivo
-    const sanitizeName = (input?: string): string => 
-      input 
-        ? input.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 20) 
-        : 'unknown'
+  const $q = useQuasar()
 
-    const propertyName = sanitizeName(selectedProperty?.name)
-    const guestName = sanitizeName(guestInfo?.name)
-    const timestamp = new Date().toISOString().split('T')[0]
+  const props = defineProps<{
+    formContainer: HTMLElement
+    guestInformation: any
+    selectedProperty: Properties | null
+    annotatedDiagramImage: any
+  }>()
 
-    return `golf-cart-inspection-${propertyName}-${guestName}-${timestamp}.pdf`
-  }
+  const emit = defineEmits<{
+    (e: 'pdf-generated'): void
+    (e: 'pdf-error', error: Error): void
+  }>()
 
   // Método para generar PDF con datos opcionales
   async function generatePDF(data?: PDFData) {
@@ -91,14 +72,15 @@
         .q-table__top, .q-table__bottom, 
         .q-table thead, .q-table tbody, 
         .q-table tr, .q-table th, .q-table td {
-          font-size: 14px !important;
+          font-size: 24px !important;
+          font-weight: bold !important;
         }
         label {
-          font-size: 14px !important;
+          font-size: 16px !important;
           font-weight: normal !important;
         }
         .q-checkbox__label {
-          font-size: 14px !important;
+          font-size: 16px !important;
           font-weight: normal !important;
         }
       `
@@ -109,8 +91,8 @@
         '.damage-record-form', 
         '.pdf-buttons',
         '.q-table__bottom',
-        '.q-field__append',
-        '.q-icon'
+        '.q-field__append', // Ocultar iconos de dropdown
+        '.q-icon' // Ocultar todos los iconos de Quasar
       ]
 
       // Ocultar elementos específicos
@@ -148,6 +130,12 @@
       const annotatedImage = props.annotatedDiagramImage || 
                              (data && (data.annotatedDiagramImage || data.cartDiagramDrawing))
 
+      console.log('Imagen anotada:', {
+        propsImage: props.annotatedDiagramImage,
+        dataImage: data?.annotatedDiagramImage,
+        dataDrawing: data?.cartDiagramDrawing
+      })
+
       if (diagramContainer && annotatedImage) {
         const imgElement = document.createElement('img')
         imgElement.src = annotatedImage
@@ -159,9 +147,12 @@
         try {
           await waitForImageLoad(imgElement)
           annotatedImageLoaded = true
+          console.log('Imagen anotada cargada correctamente')
         } catch (error) {
           console.error('Error cargando imagen anotada:', error)
         }
+      } else {
+        console.warn('No se encontró imagen anotada')
       }
 
       // Contenedor temporal para renderizado
@@ -180,10 +171,10 @@
 
       // Capturar canvas
       const canvas = await html2canvas(clonedForm, {
-        scale: 1,
+        scale: 1,  // Reducir resolución
         useCORS: true,
         allowTaint: true,
-        logging: false,
+        logging: false,  // Desactivar logging
         backgroundColor: '#ffffff'
       })
 
@@ -199,7 +190,7 @@
 
       // Calcular dimensiones de imagen
       const imgRatio = canvas.width / canvas.height
-      let imgWidth = pageWidth - 20
+      let imgWidth = pageWidth - 20  // Dejar márgenes
       let imgHeight = imgWidth / imgRatio
 
       // Ajustar altura si excede
@@ -214,7 +205,7 @@
 
       // Agregar imagen centrada con compresión JPEG
       pdf.addImage(
-        canvas.toDataURL('image/jpeg', 0.5),
+        canvas.toDataURL('image/jpeg', 0.5),  // Reducir calidad de imagen
         'JPEG', 
         xPosition, 
         yPosition, 
@@ -230,13 +221,11 @@
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
 
       // Generar nombre de archivo descriptivo
-      const sanitizeFileName = (input?: string) => 
-        input 
-          ? input.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 20)
-          : 'unknown'
+      const sanitizeFileName = (input: string) => 
+        input.replace(/[^a-z0-9]/gi, '_').toLowerCase()
 
       const fileName = data 
-        ? `inspection_${sanitizeFileName(data.cartNumber)}_${sanitizeFileName(data.selectedProperty?.name)}_${sanitizeFileName(data.guestInfo?.name)}.pdf`
+        ? `Inspection/${sanitizeFileName(data.cartNumber || 'unknown')}/${sanitizeFileName(data.selectedProperty?.name || 'unknown')}/${sanitizeFileName(data.guestInfo?.name || 'unknown')}.pdf`
         : 'golf_cart_inspection.pdf'
 
       if (isMobile) {
@@ -246,15 +235,19 @@
         link.target = '_blank'
         link.rel = 'noopener noreferrer'
         
+        // Intentar diferentes métodos de descarga
         try {
+          // Método 1: Abrir en nueva pestaña
           window.open(pdfUrl, '_blank')
           
+          // Método 2: Intentar descarga directa
           link.download = fileName
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)
         } catch (error) {
           console.warn('Error en descarga móvil:', error)
+          // Notificación de problema de descarga
           $q.notify({
             type: 'warning',
             message: 'No se pudo descargar automáticamente. Por favor, intenta descargar manualmente.',
@@ -278,18 +271,12 @@
       emit('pdf-generated')
     } catch (error) {
       console.error('Error generando PDF:', error)
-      $q.notify({
-        type: 'negative',
-        message: 'Error al generar PDF',
-        caption: error instanceof Error ? error.message : 'Error desconocido',
-        position: 'top'
-      })
       emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))
     }
   }
 
   // Método para descargar PDF
-  const downloadPDF = async (pdfData: PDFData) => {
+  const downloadPDF = async (pdfData: any) => {
     try {
       // Validar datos de entrada
       if (!pdfData) {
@@ -297,7 +284,7 @@
       }
 
       // Validar campos requeridos
-      const requiredFields: (keyof PDFData)[] = [
+      const requiredFields = [
         'guestInfo', 
         'selectedProperty', 
         'selectedCartType', 
@@ -326,6 +313,6 @@
   // Exponer método para ser llamado desde el padre
   defineExpose({ 
     downloadPDF,
-    generatePDF
+    generatePDF  // Mantener generatePDF por compatibilidad
   })
   </script>

@@ -113,13 +113,20 @@
       const canvas = await html2canvas(clonedForm, {
         scale: 2,
         useCORS: true,
-        logging: false,
+        logging: true,
         allowTaint: true,
         backgroundColor: '#ffffff'
       })
 
       // Remover contenedor temporal
       document.body.removeChild(tempContainer)
+
+      // Depuración de imagen
+      console.log('Canvas image details:', {
+        width: canvas.width,
+        height: canvas.height,
+        dataURL: canvas.toDataURL().slice(0, 100) + '...' // Mostrar inicio del DataURL
+      })
 
       // Generar PDF
       const pdf = new jsPDF({
@@ -128,13 +135,27 @@
         format: 'a4'
       })
 
-      // Añadir imagen al PDF - Manejar conversión de imagen
-      const imgData = canvas.toDataURL('image/png')
-      const imgProps = pdf.getImageProperties(imgData)
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
+      // Método alternativo de conversión de imagen
+      const img = new Image()
+      img.src = canvas.toDataURL('image/png')
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+      })
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
+      // Añadir imagen al PDF
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      
+      pdf.addImage({
+        imageData: img,
+        format: 'PNG',
+        x: 0,
+        y: 0,
+        width: pdfWidth,
+        height: pdfHeight
+      })
 
       // Generar nombre de archivo descriptivo
       const fileName = generateFileName(props.selectedProperty, props.guestInformation)

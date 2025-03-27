@@ -43,15 +43,21 @@
   }>()
 
   // Método para generar nombre de archivo descriptivo
-  function generateFileName(selectedProperty?: Properties | null): string {
-    if (!selectedProperty) return 'golf-cart-inspection.pdf'
-    
-    const propertyName = selectedProperty.name 
-      ? selectedProperty.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()
-      : 'unknown-property'
-    
+  function generateFileName(
+    selectedProperty?: Properties | null, 
+    guestInfo?: { name?: string }
+  ): string {
+    // Sanitizar nombres para usar en archivo
+    const sanitizeName = (input?: string): string => 
+      input 
+        ? input.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 20) 
+        : 'unknown'
+
+    const propertyName = sanitizeName(selectedProperty?.name)
+    const guestName = sanitizeName(guestInfo?.name)
     const timestamp = new Date().toISOString().split('T')[0]
-    return `golf-cart-inspection-${propertyName}-${timestamp}.pdf`
+
+    return `golf-cart-inspection-${propertyName}-${guestName}-${timestamp}.pdf`
   }
 
   // Método para generar PDF con datos opcionales
@@ -171,7 +177,7 @@
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
 
       // Generar nombre de archivo descriptivo
-      const fileName = generateFileName(props.selectedProperty)
+      const fileName = generateFileName(props.selectedProperty, props.guestInformation)
 
       // Método de descarga específico para iOS
       if (navigator.userAgent.match(/iPad|iPhone|iPod/)) {

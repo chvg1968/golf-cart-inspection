@@ -61,24 +61,6 @@
       // Clonar formulario
       const clonedForm = form.cloneNode(true) as HTMLElement
       
-      // Añadir estilos de fuente al clon
-      const styleElement = document.createElement('style')
-      styleElement.textContent = `
-        body, html, * {
-          font-family: Arial, sans-serif !important;
-          line-height: 1.5 !important;
-          color: #333 !important;
-          visibility: visible !important;
-          opacity: 1 !important;
-        }
-        .text-h6, .page-title {
-          font-size: 24px !important;
-          font-weight: bold !important;
-          text-transform: uppercase !important;
-        }
-      `
-      clonedForm.appendChild(styleElement)
-      
       // Elementos a ocultar
       const elementsToHide = [
         '.damage-record-form', 
@@ -104,28 +86,58 @@
         })
       })
 
+      // Añadir estilos de fuente al clon
+      const styleElement = document.createElement('style')
+      styleElement.textContent = `
+        body, html, * {
+          font-family: Arial, sans-serif !important;
+          line-height: 1.5 !important;
+          color: #333 !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+        .text-h6, .page-title {
+          font-size: 24px !important;
+          font-weight: bold !important;
+          text-transform: uppercase !important;
+        }
+      `
+      clonedForm.appendChild(styleElement)
+
       // Contenedor temporal para renderizado
       const tempDiv = document.createElement('div')
       tempDiv.style.position = 'absolute'
       tempDiv.style.left = '-9999px'
       tempDiv.style.width = '100%'
+      tempDiv.style.overflow = 'visible'
       tempDiv.appendChild(clonedForm)
       document.body.appendChild(tempDiv)
 
-      // Capturar canvas
+      // Capturar canvas con opciones seguras
       const canvas = await html2canvas(clonedForm, {
-        scale: 1,
         useCORS: true,
         allowTaint: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        scale: 1,
+        windowWidth: document.documentElement.clientWidth,
+        windowHeight: document.documentElement.clientHeight,
+        // Deshabilitar iframe para evitar document.write
+        async: true,
+        proxy: null,
+        removeContainer: true
       })
 
       // Remover contenedor temporal
       document.body.removeChild(tempDiv)
 
+      // Validar canvas
+      if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
+        throw new Error('No se pudo generar la imagen del PDF')
+      }
+
       // Convertir canvas a imagen JPEG
-      const imageData = canvas.toDataURL('image/jpeg', 0.5)
+      const imageData = canvas.toDataURL('image/jpeg', 0.75)
 
       // Generar PDF
       const pdf = new jsPDF({
@@ -196,44 +208,8 @@
     }
   }
 
-  // Método para descargar PDF
-  const downloadPDF = async (pdfData: any) => {
-    try {
-      // Validar datos de entrada
-      if (!pdfData) {
-        throw new Error('Datos de PDF no proporcionados')
-      }
-
-      // Validar campos requeridos
-      const requiredFields = [
-        'guestInfo', 
-        'selectedProperty', 
-        'selectedCartType', 
-        'cartNumber'
-      ]
-      
-      for (const field of requiredFields) {
-        if (!pdfData[field]) {
-          throw new Error(`Campo requerido faltante: ${field}`)
-        }
-      }
-
-      // Generar PDF
-      await generatePDF()
-    } catch (error) {
-      console.error('Error al generar PDF:', error)
-      $q.notify({
-        type: 'negative',
-        message: 'No se pudo generar el PDF',
-        caption: error instanceof Error ? error.message : 'Error desconocido',
-        position: 'top'
-      })
-    }
-  }
-
   // Exponer método para ser llamado desde el padre
   defineExpose({ 
-    downloadPDF,
-    generatePDF  // Mantener generatePDF por compatibilidad
+    generatePDF 
   })
   </script>

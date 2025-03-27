@@ -242,7 +242,6 @@ const saveDrawing = async () => {
 
     return combinedImage
   } catch (error) {
-    console.error('Error al guardar dibujo:', error)
     return null
   }
 }
@@ -404,7 +403,6 @@ const loadPreviousDrawing = () => {
           drawingCanvas.value.height
         )
 
-        console.log('Marcas previas cargadas para:', props.cartType)
       }
     }
     img.src = props.previousDrawing

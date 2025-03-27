@@ -130,12 +130,6 @@
       const annotatedImage = props.annotatedDiagramImage || 
                              (data && (data.annotatedDiagramImage || data.cartDiagramDrawing))
 
-      console.log('Imagen anotada:', {
-        propsImage: props.annotatedDiagramImage,
-        dataImage: data?.annotatedDiagramImage,
-        dataDrawing: data?.cartDiagramDrawing
-      })
-
       if (diagramContainer && annotatedImage) {
         const imgElement = document.createElement('img')
         imgElement.src = annotatedImage
@@ -147,12 +141,10 @@
         try {
           await waitForImageLoad(imgElement)
           annotatedImageLoaded = true
-          console.log('Imagen anotada cargada correctamente')
         } catch (error) {
           console.error('Error cargando imagen anotada:', error)
         }
       } else {
-        console.warn('No se encontró imagen anotada')
       }
 
       // Contenedor temporal para renderizado
@@ -246,7 +238,6 @@
           link.click()
           document.body.removeChild(link)
         } catch (error) {
-          console.warn('Error en descarga móvil:', error)
           // Notificación de problema de descarga
           $q.notify({
             type: 'warning',

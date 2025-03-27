@@ -243,7 +243,6 @@ const diagramMarkings = ref<Record<string, string>>({})
 // Método para guardar marcas de diagrama
 const saveDiagramMarking = (diagramPath: string, marking: string) => {
   diagramMarkings.value[diagramPath] = marking
-  console.log('Marcas guardadas:', {
     diagramPath,
     hasMarking: !!marking
   })
@@ -289,10 +288,6 @@ watch(selectedProperty, (newProperty) => {
       }
       
       // Depuración: Imprimir información para verificar la selección
-      console.log('Selected Property:', selectedProp)
-      console.log('Cart Number:', cartNumber.value)
-      console.log('Cart Type Match:', cartTypeMatch)
-      console.log('Selected Cart Type:', selectedCartType.value)
     }
   } else {
     // Resetear valores si no hay propiedad seleccionada
@@ -351,7 +346,6 @@ function validateForm(): boolean {
   const hasValidCartType = selectedCartType.value !== null
   const hasValidDiagram = !!(annotatedDiagramImage.value || diagramMarkings.value[selectedCartType.value?.diagramPath || ''])
 
-  console.log('Validación de formulario:', {
     guestInfo: hasValidGuestInfo,
     property: hasValidProperty,
     cartType: hasValidCartType,
@@ -369,7 +363,6 @@ function validateForm(): boolean {
 // Computed para habilitar/deshabilitar botón de PDF
 const canDownloadPDF = computed(() => {
   const isValid = validateForm()
-  console.log('Puede descargar PDF:', isValid)
   return isValid
 })
 

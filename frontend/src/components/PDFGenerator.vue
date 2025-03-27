@@ -47,107 +47,20 @@
     return `golf-cart-inspection-${propertyName}-${guestName}-${timestamp}.pdf`
   }
 
-  // Método para convertir canvas a imagen base64 de manera segura
-  function canvasToBase64(canvas: HTMLCanvasElement): string {
-    try {
-      // Validar dimensiones del canvas
-      if (canvas.width <= 0 || canvas.height <= 0) {
-        console.error('Canvas con dimensiones inválidas:', {
-          width: canvas.width,
-          height: canvas.height
-        })
-        throw new Error('No se puede convertir canvas con dimensiones 0')
-      }
-      
-      // Crear nuevo canvas para evitar problemas de corrupción
-      const tempCanvas = document.createElement('canvas')
-      tempCanvas.width = canvas.width
-      tempCanvas.height = canvas.height
-      
-      const ctx = tempCanvas.getContext('2d')
-      if (!ctx) {
-        throw new Error('No se pudo obtener contexto del canvas')
-      }
-      
-      ctx.drawImage(canvas, 0, 0)
-      return tempCanvas.toDataURL('image/png')
-    } catch (error) {
-      console.error('Error convirtiendo canvas a base64:', error)
-      throw error
-    }
-  }
-
   // Método para generar PDF con datos opcionales
   async function generatePDF() {
     try {
       // Buscar formulario de manera más robusta
       const form = props.formContainer || 
-        document.querySelector('.form-container') || 
-        document.querySelector('form') as HTMLElement
+        document.querySelector('.form-container') as HTMLElement
       
       if (!form) {
-        throw new Error('No se encontró ningún formulario para generar PDF')
+        throw new Error('Formulario no encontrado')
       }
 
-      // Validar contenido del formulario de manera más detallada
-      const checkFormContent = (element: HTMLElement): boolean => {
-        // Verificar si hay elementos visibles
-        const visibleElements = element.querySelectorAll('input, textarea, select, img, canvas')
-        
-        // Verificar si hay texto o elementos interactivos
-        const hasVisibleContent = Array.from(visibleElements).some(el => {
-          if (el instanceof HTMLInputElement) {
-            return el.value.trim().length > 0
-          }
-          if (el instanceof HTMLTextAreaElement) {
-            return el.value.trim().length > 0
-          }
-          if (el instanceof HTMLSelectElement) {
-            return el.value.trim().length > 0
-          }
-          if (el instanceof HTMLImageElement) {
-            return el.src && el.src.trim().length > 0
-          }
-          if (el instanceof HTMLCanvasElement) {
-            return el.width > 0 && el.height > 0
-          }
-          return false
-        })
-
-        console.log('Contenido del formulario:', {
-          visibleElements: visibleElements.length,
-          hasVisibleContent
-        })
-
-        return hasVisibleContent
-      }
-
-      // Verificar si hay contenido
-      if (!checkFormContent(form)) {
-        $q.notify({
-          type: 'warning',
-          message: 'No hay contenido para generar PDF',
-          caption: 'Asegúrate de haber completado el formulario',
-          position: 'top'
-        })
-        return
-      }
-
-      // Clonar formulario de manera segura
+      // Clonar formulario
       const clonedForm = form.cloneNode(true) as HTMLElement
       
-      // Limpiar elementos que pueden causar problemas
-      const elementsToRemove = clonedForm.querySelectorAll([
-        'script', 
-        'style', 
-        '.hidden', 
-        '[hidden]', 
-        '.q-dialog',
-        '.q-tooltip'
-      ].join(','))
-      
-      elementsToRemove.forEach(el => el.remove())
-
       // Añadir estilos de fuente al clon
       const styleElement = document.createElement('style')
       styleElement.textContent = `
@@ -157,115 +70,113 @@
           color: #333 !important;
           visibility: visible !important;
           opacity: 1 !important;
-          position: static !important;
         }
         .text-h6, .page-title {
           font-size: 24px !important;
           font-weight: bold !important;
           text-transform: uppercase !important;
         }
-        input, select, textarea, div, span, 
-        .q-table, .q-table__container, 
-        .signature-container {
-          font-size: 14px !important;
-        }
       `
       clonedForm.appendChild(styleElement)
+      
+      // Elementos a ocultar
+      const elementsToHide = [
+        '.damage-record-form', 
+        '.pdf-buttons',
+        '.q-table__bottom',
+        '.q-field__append',
+        '.q-icon',
+        'script', 
+        'style', 
+        '.hidden', 
+        '[hidden]', 
+        '.q-dialog',
+        '.q-tooltip'
+      ]
 
-      // Añadir clon al body para renderizado
-      const tempContainer = document.createElement('div')
-      tempContainer.style.position = 'absolute'
-      tempContainer.style.left = '-9999px'
-      tempContainer.style.width = '100%'
-      tempContainer.style.height = '100%'
-      tempContainer.style.overflow = 'visible'
-      tempContainer.appendChild(clonedForm)
-      document.body.appendChild(tempContainer)
+      // Ocultar elementos específicos
+      elementsToHide.forEach(selector => {
+        const elements = clonedForm.querySelectorAll(selector)
+        elements.forEach(element => {
+          if (element instanceof HTMLElement) {
+            element.style.display = 'none'
+          }
+        })
+      })
 
-      // Pequeño retraso para asegurar renderizado
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Contenedor temporal para renderizado
+      const tempDiv = document.createElement('div')
+      tempDiv.style.position = 'absolute'
+      tempDiv.style.left = '-9999px'
+      tempDiv.style.width = '100%'
+      tempDiv.appendChild(clonedForm)
+      document.body.appendChild(tempDiv)
 
-      // Renderizar HTML a canvas con opciones más robustas
+      // Capturar canvas
       const canvas = await html2canvas(clonedForm, {
-        scale: 2,
+        scale: 1,
         useCORS: true,
-        logging: true,
         allowTaint: true,
-        backgroundColor: '#ffffff',
-        windowWidth: clonedForm.scrollWidth,
-        windowHeight: clonedForm.scrollHeight
+        logging: false,
+        backgroundColor: '#ffffff'
       })
 
       // Remover contenedor temporal
-      document.body.removeChild(tempContainer)
+      document.body.removeChild(tempDiv)
 
-      // Validar canvas generado
-      if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
-        $q.notify({
-          type: 'negative',
-          message: 'No se pudo generar la imagen del PDF',
-          caption: 'Error al renderizar el contenido',
-          position: 'top'
-        })
-        throw new Error('Canvas generado tiene dimensiones inválidas')
-      }
-
-      // Convertir canvas a base64 de manera segura
-      const dataURL = canvasToBase64(canvas)
-
-      // Depuración de imagen
-      console.log('Canvas image details:', {
-        width: canvas.width,
-        height: canvas.height,
-        dataURLLength: dataURL.length,
-        dataURLStart: dataURL.slice(0, 100) + '...'
-      })
+      // Convertir canvas a imagen JPEG
+      const imageData = canvas.toDataURL('image/jpeg', 0.5)
 
       // Generar PDF
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'a4'
+        format: 'letter'
       })
 
-      // Método directo de añadir imagen
+      // Obtener dimensiones del PDF
       const pdfWidth = pdf.internal.pageSize.getWidth()
       const pdfHeight = pdf.internal.pageSize.getHeight()
-      
+
+      // Calcular dimensiones de imagen
+      const imgRatio = canvas.width / canvas.height
+      let imgWidth = pdfWidth - 20  // Márgenes
+      let imgHeight = imgWidth / imgRatio
+
+      // Ajustar altura si excede
+      if (imgHeight > pdfHeight - 20) {
+        imgHeight = pdfHeight - 20
+        imgWidth = imgHeight * imgRatio
+      }
+
+      // Añadir imagen al PDF
       pdf.addImage({
-        imageData: dataURL,
-        format: 'PNG',
-        x: 0,
-        y: 0,
-        width: pdfWidth,
-        height: pdfHeight
+        imageData: imageData,
+        format: 'JPEG',
+        x: 10,
+        y: 10,
+        width: imgWidth,
+        height: imgHeight
       })
 
       // Generar nombre de archivo descriptivo
       const fileName = generateFileName(props.selectedProperty, props.guestInformation)
 
-      // Método de descarga específico para iOS
-      if (navigator.userAgent.match(/iPad|iPhone|iPod/)) {
-        // Método de descarga para iOS
-        const pdfBlob = pdf.output('blob')
-        const pdfUrl = URL.createObjectURL(pdfBlob)
-        
-        // Crear enlace temporal para descarga
-        const link = document.createElement('a')
-        link.href = pdfUrl
-        link.download = fileName
-        
-        // Simular clic para descargar
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+      // Método de descarga
+      const pdfBlob = pdf.output('blob')
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+      
+      const link = document.createElement('a')
+      link.href = pdfUrl
+      link.download = fileName
+      link.click()
 
-        // Liberar recursos
-        URL.revokeObjectURL(pdfUrl)
-      } else {
-        // Método de descarga estándar para otros navegadores
-        pdf.save(fileName)
-      }
+      // Notificación de éxito
+      $q.notify({
+        type: 'positive',
+        message: 'PDF generado exitosamente',
+        position: 'top'
+      })
 
       // Emitir evento de éxito
       emit('pdf-generated')
@@ -273,14 +184,14 @@
     } catch (error) {
       console.error('Error generando PDF:', error)
       
-      // Notificación de error detallada
+      // Notificación de error
       $q.notify({
         type: 'negative',
-        message: 'Error al generar PDF',
-        caption: error instanceof Error ? error.message : 'Error desconocido',
+        message: 'Error al generar PDF: ' + (error instanceof Error ? error.message : 'Error desconocido'),
         position: 'top'
       })
 
+      // Emitir evento de error
       emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))
     }
   }

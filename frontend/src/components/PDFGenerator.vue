@@ -47,6 +47,27 @@
     return `golf-cart-inspection-${propertyName}-${guestName}-${timestamp}.pdf`
   }
 
+  // Método para convertir canvas a imagen base64 de manera segura
+  function canvasToBase64(canvas: HTMLCanvasElement): string {
+    try {
+      // Crear nuevo canvas para evitar problemas de corrupción
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = canvas.width
+      tempCanvas.height = canvas.height
+      
+      const ctx = tempCanvas.getContext('2d')
+      if (!ctx) {
+        throw new Error('No se pudo obtener contexto del canvas')
+      }
+      
+      ctx.drawImage(canvas, 0, 0)
+      return tempCanvas.toDataURL('image/png')
+    } catch (error) {
+      console.error('Error convirtiendo canvas a base64:', error)
+      throw error
+    }
+  }
+
   // Método para generar PDF con datos opcionales
   async function generatePDF() {
     try {
@@ -121,8 +142,10 @@
       // Remover contenedor temporal
       document.body.removeChild(tempContainer)
 
+      // Convertir canvas a base64 de manera segura
+      const dataURL = canvasToBase64(canvas)
+
       // Depuración de imagen
-      const dataURL = canvas.toDataURL('image/png')
       console.log('Canvas image details:', {
         width: canvas.width,
         height: canvas.height,
@@ -138,43 +161,17 @@
       })
 
       // Método directo de añadir imagen
-      try {
-        const pdfWidth = pdf.internal.pageSize.getWidth()
-        const pdfHeight = pdf.internal.pageSize.getHeight()
-        
-        pdf.addImage({
-          imageData: dataURL,
-          format: 'PNG',
-          x: 0,
-          y: 0,
-          width: pdfWidth,
-          height: pdfHeight
-        })
-      } catch (imageError) {
-        console.error('Error añadiendo imagen al PDF:', imageError)
-        
-        // Intentar método alternativo
-        try {
-          const img = new Image()
-          img.src = dataURL
-          
-          await new Promise((resolve, reject) => {
-            img.onload = resolve
-            img.onerror = (e) => {
-              console.error('Error cargando imagen:', e)
-              reject(e)
-            }
-          })
-
-          const pdfWidth = pdf.internal.pageSize.getWidth()
-          const pdfHeight = pdf.internal.pageSize.getHeight()
-          
-          pdf.addImage(img, 'PNG', 0, 0, pdfWidth, pdfHeight)
-        } catch (fallbackError) {
-          console.error('Error en método alternativo:', fallbackError)
-          throw fallbackError
-        }
-      }
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      
+      pdf.addImage({
+        imageData: dataURL,
+        format: 'PNG',
+        x: 0,
+        y: 0,
+        width: pdfWidth,
+        height: pdfHeight
+      })
 
       // Generar nombre de archivo descriptivo
       const fileName = generateFileName(props.selectedProperty, props.guestInformation)

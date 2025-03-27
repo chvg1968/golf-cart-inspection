@@ -50,6 +50,15 @@
   // Método para convertir canvas a imagen base64 de manera segura
   function canvasToBase64(canvas: HTMLCanvasElement): string {
     try {
+      // Validar dimensiones del canvas
+      if (canvas.width <= 0 || canvas.height <= 0) {
+        console.error('Canvas con dimensiones inválidas:', {
+          width: canvas.width,
+          height: canvas.height
+        })
+        throw new Error('No se puede convertir canvas con dimensiones 0')
+      }
+      
       // Crear nuevo canvas para evitar problemas de corrupción
       const tempCanvas = document.createElement('canvas')
       tempCanvas.width = canvas.width
@@ -78,6 +87,17 @@
       
       if (!form) {
         throw new Error('No se encontró ningún formulario para generar PDF')
+      }
+
+      // Validar contenido del formulario
+      const hasContent = form.textContent && form.textContent.trim().length > 0
+      if (!hasContent) {
+        $q.notify({
+          type: 'warning',
+          message: 'No hay contenido para generar PDF',
+          position: 'top'
+        })
+        return
       }
 
       // Clonar formulario de manera segura
@@ -124,23 +144,38 @@
       tempContainer.style.position = 'absolute'
       tempContainer.style.left = '-9999px'
       tempContainer.style.width = '100%'
+      tempContainer.style.height = '100%'
+      tempContainer.style.overflow = 'visible'
       tempContainer.appendChild(clonedForm)
       document.body.appendChild(tempContainer)
 
       // Pequeño retraso para asegurar renderizado
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Renderizar HTML a canvas
+      // Renderizar HTML a canvas con opciones más robustas
       const canvas = await html2canvas(clonedForm, {
         scale: 2,
         useCORS: true,
         logging: true,
         allowTaint: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: clonedForm.scrollWidth,
+        windowHeight: clonedForm.scrollHeight
       })
 
       // Remover contenedor temporal
       document.body.removeChild(tempContainer)
+
+      // Validar canvas generado
+      if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
+        $q.notify({
+          type: 'negative',
+          message: 'No se pudo generar la imagen del PDF',
+          caption: 'Error al renderizar el contenido',
+          position: 'top'
+        })
+        throw new Error('Canvas generado tiene dimensiones inválidas')
+      }
 
       // Convertir canvas a base64 de manera segura
       const dataURL = canvasToBase64(canvas)

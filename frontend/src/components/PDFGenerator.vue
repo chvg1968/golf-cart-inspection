@@ -42,6 +42,18 @@
     (e: 'pdf-error', error: Error): void
   }>()
 
+  // Método para generar nombre de archivo descriptivo
+  function generateFileName(selectedProperty?: Properties | null): string {
+    if (!selectedProperty) return 'golf-cart-inspection.pdf'
+    
+    const propertyName = selectedProperty.name 
+      ? selectedProperty.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()
+      : 'unknown-property'
+    
+    const timestamp = new Date().toISOString().split('T')[0]
+    return `golf-cart-inspection-${propertyName}-${timestamp}.pdf`
+  }
+
   // Método para generar PDF con datos opcionales
   async function generatePDF(data?: PDFData) {
     try {
@@ -69,19 +81,8 @@
         }
         input, select, textarea, div, span, 
         .q-table, .q-table__container, 
-        .q-table__top, .q-table__bottom, 
-        .q-table thead, .q-table tbody, 
-        .q-table tr, .q-table th, .q-table td {
-          font-size: 24px !important;
-          font-weight: bold !important;
-        }
-        label {
-          font-size: 16px !important;
-          font-weight: normal !important;
-        }
-        .q-checkbox__label {
-          font-size: 16px !important;
-          font-weight: normal !important;
+        .signature-container {
+          font-size: 14px !important;
         }
       `
       clonedForm.appendChild(styleElement)
@@ -147,119 +148,57 @@
       } else {
       }
 
-      // Contenedor temporal para renderizado
-      const tempDiv = document.createElement('div')
-      tempDiv.style.position = 'absolute'
-      tempDiv.style.left = '-9999px'
-      tempDiv.style.width = '210mm'
-      tempDiv.style.minHeight = '297mm'
-      tempDiv.style.padding = '10mm'
-      tempDiv.style.boxSizing = 'border-box'
-      tempDiv.appendChild(clonedForm)
-      document.body.appendChild(tempDiv)
-
-      // Añadir un pequeño retraso para asegurar renderizado
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // Capturar canvas
+      // Renderizar HTML a canvas
       const canvas = await html2canvas(clonedForm, {
-        scale: 1,  // Reducir resolución
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
-        logging: false,  // Desactivar logging
-        backgroundColor: '#ffffff'
+        logging: false
       })
 
-      // Remover contenedor temporal
-      document.body.removeChild(tempDiv)
+      // Generar PDF
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
 
-      // Crear PDF
-      const pdf = new jsPDF('p', 'mm', 'letter')
-      
-      // Obtener dimensiones de página
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
+      // Añadir imagen al PDF
+      const imgData = canvas.toDataURL('image/jpeg', 1.0)
+      const imgProps = pdf.getImageProperties(imgData)
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
 
-      // Calcular dimensiones de imagen
-      const imgRatio = canvas.width / canvas.height
-      let imgWidth = pageWidth - 20  // Dejar márgenes
-      let imgHeight = imgWidth / imgRatio
-
-      // Ajustar altura si excede
-      if (imgHeight > pageHeight - 20) {
-        imgHeight = pageHeight - 20
-        imgWidth = imgHeight * imgRatio
-      }
-
-      // Calcular posición centrada
-      const xPosition = (pageWidth - imgWidth) / 2
-      const yPosition = (pageHeight - imgHeight) / 2
-
-      // Agregar imagen centrada con compresión JPEG
-      pdf.addImage(
-        canvas.toDataURL('image/jpeg', 0.5),  // Reducir calidad de imagen
-        'JPEG', 
-        xPosition, 
-        yPosition, 
-        imgWidth, 
-        imgHeight
-      )
-      
-      // Generar Blob para descarga
-      const pdfBlob = pdf.output('blob')
-      const pdfUrl = URL.createObjectURL(pdfBlob)
-
-      // Detección de dispositivos móviles
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
 
       // Generar nombre de archivo descriptivo
-      const sanitizeFileName = (input: string) => 
-        input.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+      const fileName = generateFileName(props.selectedProperty)
 
-      const fileName = data 
-        ? `Inspection/${sanitizeFileName(data.cartNumber || 'unknown')}/${sanitizeFileName(data.selectedProperty?.name || 'unknown')}/${sanitizeFileName(data.guestInfo?.name || 'unknown')}.pdf`
-        : 'golf_cart_inspection.pdf'
-
-      if (isMobile) {
-        // Estrategia para dispositivos móviles
-        const link = document.createElement('a')
-        link.href = pdfUrl
-        link.target = '_blank'
-        link.rel = 'noopener noreferrer'
+      // Método de descarga específico para iOS
+      if (navigator.userAgent.match(/iPad|iPhone|iPod/)) {
+        // Método de descarga para iOS
+        const pdfBlob = pdf.output('blob')
+        const pdfUrl = URL.createObjectURL(pdfBlob)
         
-        // Intentar diferentes métodos de descarga
-        try {
-          // Método 1: Abrir en nueva pestaña
-          window.open(pdfUrl, '_blank')
-          
-          // Método 2: Intentar descarga directa
-          link.download = fileName
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-        } catch (error) {
-          // Notificación de problema de descarga
-          $q.notify({
-            type: 'warning',
-            message: 'No se pudo descargar automáticamente. Por favor, intenta descargar manualmente.',
-            position: 'top'
-          })
-        }
-      } else {
-        // Método de descarga para escritorio
+        // Crear enlace temporal para descarga
         const link = document.createElement('a')
         link.href = pdfUrl
         link.download = fileName
+        
+        // Simular clic para descargar
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
+
+        // Liberar recursos
+        URL.revokeObjectURL(pdfUrl)
+      } else {
+        // Método de descarga estándar para otros navegadores
+        pdf.save(fileName)
       }
 
-      // Liberar recursos
-      URL.revokeObjectURL(pdfUrl)
-
-      // Emitir evento de PDF generado
+      // Emitir evento de éxito
       emit('pdf-generated')
+
     } catch (error) {
       console.error('Error generando PDF:', error)
       emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))

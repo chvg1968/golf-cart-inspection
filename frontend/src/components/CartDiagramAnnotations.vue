@@ -79,7 +79,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import golfCart4Seater from '../assets/images/4seater.jpg'
-import golfCart6Seater from '../assets/images/6seater.png'
+import golfCart6Seater from '../assets/images/6seater.jpg'
 
 // Definir interfaz para daños
 interface Damage {

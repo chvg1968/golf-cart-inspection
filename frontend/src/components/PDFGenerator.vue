@@ -128,13 +128,13 @@
         format: 'a4'
       })
 
-      // Añadir imagen al PDF
-      const imgData = canvas.toDataURL('image/jpeg', 1.0)
+      // Añadir imagen al PDF - Manejar conversión de imagen
+      const imgData = canvas.toDataURL('image/png')
       const imgProps = pdf.getImageProperties(imgData)
       const pdfWidth = pdf.internal.pageSize.getWidth()
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight)
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
 
       // Generar nombre de archivo descriptivo
       const fileName = generateFileName(props.selectedProperty, props.guestInformation)

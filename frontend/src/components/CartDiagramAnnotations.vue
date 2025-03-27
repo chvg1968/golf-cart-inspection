@@ -205,23 +205,14 @@ const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: st
 
         // Guardar imagen sobrescrita
         try {
-          // Usar API de sistema de archivos para sobrescribir
-          const fs = require('fs')
-          const path = require('path')
+          // Usar API de almacenamiento local
+          localStorage.setItem(
+            `diagram_${baseImagePath.split('/').pop()}`, 
+            combinedImage
+          )
 
-          // Convertir base64 a buffer
-          const base64Data = combinedImage.replace(/^data:image\/png;base64,/, '')
-          
-          // Guardar archivo
-          fs.writeFile(baseImagePath, base64Data, 'base64', (err) => {
-            if (err) {
-              console.error('Error al guardar imagen:', err)
-              resolve(combinedImage)
-            } else {
-              console.log('Imagen sobrescrita:', baseImagePath)
-              resolve(combinedImage)
-            }
-          })
+          console.log('Imagen sobrescrita en localStorage:', baseImagePath)
+          resolve(combinedImage)
         } catch (error) {
           console.error('Error al sobrescribir imagen:', error)
           resolve(combinedImage)

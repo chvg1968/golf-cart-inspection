@@ -187,76 +187,20 @@ import PDFGenerator from '@/components/PDFGenerator.vue'
 import { PROPERTIES, GOLF_CART_TYPES } from '@/constants'
 import { Properties } from '@/types/base-types'
 
-// Importaciones de imágenes
-import fourSeaterImage from '@/assets/images/4seater.jpg'
-import sixSeaterImage from '@/assets/images/6seater.png'
-
 // Configuración de Quasar
 const quasar = useQuasar()
-
-// Utilidad centralizada para resolución de imágenes
-const ImageResolver = {
-  /**
-   * Resolver ruta de imagen de manera simple
-   * @param {any} cartType - Objeto de tipo de carrito
-   * @returns {string} Ruta de imagen resuelta
-   */
-  resolveImagePath(cartType: any): string {
-    // Si el tipo de carrito tiene una ruta de diagrama, usarla
-    if (cartType?.diagramPath) {
-      return cartType.diagramPath
-    }
-
-    // Determinar imagen por defecto basada en la etiqueta
-    const label = cartType?.label || ''
-    return label.includes('6') ? sixSeaterImage : fourSeaterImage
-  },
-
-  /**
-   * Determinar tipo de imagen basado en label
-   * @param {any} cartType - Objeto de tipo de carrito
-   * @returns {'fourSeater' | 'sixSeater'} Tipo de imagen
-   */
-  determineImageType(cartType: any): 'fourSeater' | 'sixSeater' {
-    const label = cartType?.label || ''
-    return label.includes('6') ? 'sixSeater' : 'fourSeater'
-  }
-}
-
-// Propiedad seleccionada con tipado explícito
-const selectedProperty = ref<Properties | null>(null)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
 const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
   ...prop,
   label: prop.name,
-  value: prop.id,
-  diagramPath: prop.diagramType === '6seaters' ? sixSeaterImage : fourSeaterImage
+  value: prop.id
 })))
 
-// Definición de tipos de carrito con rutas de imagen resueltas
-const cartTypeOptions = ref<any[]>(GOLF_CART_TYPES.map(cartType => ({
-  ...cartType,
-  diagramPath: cartType.label.includes('6') ? sixSeaterImage : fourSeaterImage
-})))
+const selectedProperty = ref<Properties | null>(null)
 
-// Definir un valor por defecto para el tipo de carrito
-const defaultCartType = {
-  id: 'default',
-  name: 'Default Cart',
-  label: 'Default Cart',
-  diagramPath: fourSeaterImage,
-  value: 'default'
-}
-
-// Usar la interfaz definida para el ref con un valor inicial
-const selectedCartType = ref({
-  id: defaultCartType.id,
-  name: defaultCartType.name,
-  label: defaultCartType.label,
-  diagramPath: defaultCartType.diagramPath,
-  value: defaultCartType.value
-})
+// Convertir PROPERTIES a un formato adecuado para el selector
+const cartTypeOptions = ref<any[]>(GOLF_CART_TYPES)
 
 const guestInfo = reactive({
   name: '',
@@ -264,6 +208,27 @@ const guestInfo = reactive({
   phone: '',
   date: ''
 })
+
+// Definir una interfaz para el tipo de carrito con valores por defecto
+interface CartType {
+  id: string | number;
+  name: string;
+  label: string;
+  diagramPath: string;
+  value: string;
+}
+
+// Definir un valor por defecto para el tipo de carrito
+const defaultCartType: CartType = {
+  id: 'default',
+  name: 'Default Cart',
+  label: 'Default Cart',
+  diagramPath: '/default-diagram.svg',
+  value: 'default'
+}
+
+// Usar la interfaz definida para el ref con un valor inicial
+const selectedCartType = ref<CartType>(defaultCartType)
 
 const guestObservations = ref<string>('')
 const signature = ref<string | null>(null)
@@ -308,19 +273,16 @@ watch(selectedProperty, (newProperty) => {
       
       // Usar el tipo de carrito encontrado o el valor por defecto
       if (cartTypeMatch) {
-        // Seleccionar ruta de imagen basada en el tipo de carrito
-        const diagramPath = ImageResolver.resolveImagePath(cartTypeMatch)
-        
         selectedCartType.value = { 
           id: cartTypeMatch.id || 'default', 
           name: cartTypeMatch.name || 'Default Cart', 
           label: cartTypeMatch.label, 
-          diagramPath: diagramPath, 
+          diagramPath: cartTypeMatch.diagramPath || '/default-diagram.svg', 
           value: cartTypeMatch.value 
         }
 
         // Obtener marcas previas para este diagrama
-        const previousMarking = getPreviousDiagramMarking(diagramPath)
+        const previousMarking = getPreviousDiagramMarking(cartTypeMatch.diagramPath)
         annotatedDiagramImage.value = previousMarking
       } else {
         selectedCartType.value = defaultCartType
@@ -329,6 +291,7 @@ watch(selectedProperty, (newProperty) => {
       // Depuración: Imprimir información para verificar la selección
       console.log('Selected Property:', selectedProp)
       console.log('Cart Number:', cartNumber.value)
+      console.log('Cart Type Match:', cartTypeMatch)
       console.log('Selected Cart Type:', selectedCartType.value)
     }
   } else {

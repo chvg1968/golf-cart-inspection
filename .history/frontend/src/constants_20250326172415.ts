@@ -17,7 +17,29 @@ export const GOLF_CART_TYPES: CartTypeOption[] = [
   }
 ]
 
-
+export const DAMAGE_TYPES: DamageType[] = [
+  { 
+    id: 1, 
+    name: 'Scratches',
+    value: 'Scratches',
+    severity: 'Low',
+    label: 'Scratches'
+  },
+  { 
+    id: 2, 
+    name: 'Missing Parts',
+    value: 'Missing Parts', 
+    severity: 'Medium',
+    label: 'Missing Parts'
+  },
+  { 
+    id: 3, 
+    name: 'Damage/Bumps',
+    value: 'Damage/Bumps',
+    severity: 'High',
+    label: 'Damage/Bumps'
+  }
+]
 
 export const PROPERTIES: Properties[] = [
   { 

@@ -77,25 +77,46 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import golfCart4Seater from '../assets/images/4seater.jpg'
-import golfCart6Seater from '../assets/images/6seater.png'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
+import { useQuasar } from 'quasar'
 
 // Definir interfaz para daños
-interface Damage {
-  x: number
-  y: number
-  part: string
+export interface Damage {
   type: string
+  location: string
+  x?: number
+  y?: number
+  part?: string
   quantity?: number
 }
 
 // Definir interfaz para CartTypeOption
 interface CartTypeOption {
+  id?: string
+  name?: string
   label: string
-  value: string
-  diagramPath: string
+  value?: string
 }
+
+// Definir props con tipos
+const props = withDefaults(defineProps<{
+  diagramPath?: string
+  damages?: Damage[]
+  previousDrawing?: string
+  cartType: string | CartTypeOption
+}>(), {
+  diagramPath: '',
+  damages: () => [],
+  previousDrawing: '',
+  cartType: () => ({ label: 'Default Cart' })
+})
+
+// Definir emits con tipos
+const emit = defineEmits<{
+  (e: 'drawing-created', data: { drawing: string, cartType: string }): void
+  (e: 'drawing-updated', data: string): void
+  (e: 'update-damage-position', damage: Damage): void
+}>()
 
 // Colores predefinidos sin etiquetas
 const colorOptions = [
@@ -109,30 +130,6 @@ const lineWidths = [8]
 const currentLineWidth = ref(lineWidths[0])
 
 const currentColor = ref(colorOptions[0].color)
-
-const props = defineProps({
-  cartType: { 
-    type: [Object as () => CartTypeOption, String], 
-    required: true
-  },
-  damages: { 
-    type: Array as () => Damage[], 
-    default: () => [] 
-  },
-  diagramPath: {
-    type: String,
-    default: '../assets/images/4seater.png'
-  },
-  previousDrawing: {
-    type: String,
-    default: null
-  }
-})
-
-const emit = defineEmits([
-  'update-damage-position', 
-  'drawing-created'
-])
 
 const cartDiagramContainer = ref<HTMLDivElement | null>(null)
 const cartImage = ref<HTMLImageElement | null>(null)
@@ -149,9 +146,9 @@ const drawingHistory = ref<ImageData[]>([])
 // Calcular la ruta del diagrama actual
 const currentDiagramPath = computed(() => {
   if (typeof props.cartType === 'string') {
-    return props.cartType.includes('4') ? golfCart4Seater : golfCart6Seater
+    return props.cartType.includes('4') ? '../assets/images/4seater.jpg' : '../assets/images/6seater.png'
   }
-  return props.cartType?.diagramPath || golfCart4Seater
+  return props.cartType?.value || '../assets/images/4seater.jpg'
 })
 
 // Obtener label del tipo de carrito
@@ -159,7 +156,7 @@ const cartTypeLabel = computed(() => {
   if (typeof props.cartType === 'string') {
     return props.cartType.includes('4') ? '4 Seater' : '6 Seater'
   }
-  return props.cartType?.label || '4 Seater'
+  return props.cartType?.label || 'Default Cart'
 })
 
 // Selección de color
@@ -171,61 +168,37 @@ const selectColor = (color: string) => {
 }
 
 // Método para sobrescribir imagen base con marcas
-const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: string) => {
-  return new Promise<string>((resolve, reject) => {
-    // Crear canvas para combinar imágenes
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    
-    if (!ctx) {
-      reject(new Error('No se pudo crear el contexto del canvas'))
-      return
-    }
-
-    // Crear imágenes base y nueva marca
+const overwriteBaseImageWithMarks = (baseImagePath: string, newMarking: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
     const baseImage = new Image()
     const newMarkImage = new Image()
 
     baseImage.onload = () => {
-      // Establecer dimensiones del canvas
+      const canvas = document.createElement('canvas')
       canvas.width = baseImage.width
       canvas.height = baseImage.height
+      const ctx = canvas.getContext('2d')
+
+      if (!ctx) {
+        console.error('No se pudo obtener el contexto del canvas')
+        resolve(baseImagePath)
+        return
+      }
 
       // Dibujar imagen base
-      ctx.drawImage(baseImage, 0, 0)
+      ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
 
-      // Dibujar nueva marca
       newMarkImage.onload = () => {
-        // Dibujar nueva marca con transparencia
-        ctx.globalAlpha = 0.7  // Transparencia de la marca
+        // Dibujar marca sobre imagen base
+        ctx.globalAlpha = 0.5 // Transparencia para marcas
         ctx.drawImage(newMarkImage, 0, 0, canvas.width, canvas.height)
-        
-        // Convertir canvas a imagen base64
+        ctx.globalAlpha = 1 // Restaurar opacidad
+
+        // Convertir a base64
         const combinedImage = canvas.toDataURL('image/png')
 
-        // Guardar imagen sobrescrita
-        try {
-          // Usar API de sistema de archivos para sobrescribir
-          const fs = require('fs')
-          const path = require('path')
-
-          // Convertir base64 a buffer
-          const base64Data = combinedImage.replace(/^data:image\/png;base64,/, '')
-          
-          // Guardar archivo
-          fs.writeFile(baseImagePath, base64Data, 'base64', (err) => {
-            if (err) {
-              console.error('Error al guardar imagen:', err)
-              resolve(combinedImage)
-            } else {
-              console.log('Imagen sobrescrita:', baseImagePath)
-              resolve(combinedImage)
-            }
-          })
-        } catch (error) {
-          console.error('Error al sobrescribir imagen:', error)
-          resolve(combinedImage)
-        }
+        // En entorno de navegador, resolver con imagen base64
+        resolve(combinedImage)
       }
 
       newMarkImage.onerror = () => {
@@ -237,6 +210,7 @@ const overwriteBaseImageWithMarks = async (baseImagePath: string, newMarking: st
     }
 
     baseImage.onerror = () => {
+      console.error('No se pudo cargar la imagen base:', baseImagePath)
       reject(new Error('No se pudo cargar la imagen base'))
     }
 
@@ -258,10 +232,15 @@ const saveDrawing = async () => {
       currentDrawing
     )
 
+    // Determinar el tipo de carrito
+    const cartTypeLabel = typeof props.cartType === 'string' 
+      ? props.cartType 
+      : props.cartType.label || 'Default Cart'
+
     // Emitir evento con marcas combinadas
     emit('drawing-created', {
       drawing: combinedImage,
-      cartType: props.cartType
+      cartType: cartTypeLabel
     })
 
     return combinedImage
@@ -433,6 +412,36 @@ const loadPreviousDrawing = () => {
     }
     img.src = props.previousDrawing
   }
+}
+
+// Método para manejar la creación de dibujos
+const handleDrawingCreated = (drawingData: { drawing: string, cartType: string }) => {
+  if (drawingData && drawingData.drawing && drawingData.cartType) {
+    console.log('Dibujo creado:', drawingData)
+    emit('drawing-created', {
+      drawing: drawingData.drawing,
+      cartType: drawingData.cartType
+    })
+    return true
+  }
+  return false
+}
+
+// Método para actualizar posición de daños
+const updateDamagePosition = (damage: Damage) => {
+  console.log('Actualizando posición de daño:', damage)
+  emit('update-damage-position', damage)
+}
+
+// Usar quasar para mostrar notificaciones
+const notifyDamageUpdate = (damage: Damage) => {
+  const quasar = useQuasar()
+  quasar.notify({
+    type: 'info',
+    message: `Daño actualizado: ${damage.type} en ${damage.location}`
+  })
+  updateDamagePosition(damage)
+  return damage
 }
 
 // Configurar dimensiones y canvas al montar

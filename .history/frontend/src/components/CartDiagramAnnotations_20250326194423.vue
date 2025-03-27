@@ -454,17 +454,7 @@ onMounted(() => {
   })
 })
 
-// Colores con referencias
-// Método para renderizar referencia de colores
-const renderColorReference = () => {
-  if (!cartDiagramContainer.value) return
 
-  // Verificar si ya existe una referencia de color
-  const existingReference = cartDiagramContainer.value.querySelector('.color-reference')
-  if (existingReference) {
-    existingReference.remove()
-  }
-}
 </script>
 
 <style scoped>

@@ -2,14 +2,14 @@ import type { CartTypeOption, Properties } from './types/base-types';
 
 export const GOLF_CART_TYPES: CartTypeOption[] = [
   { 
-    id: "1", 
+    id: 1, 
     name: '4 Seaters', 
     label: '4 Seaters',
     diagramPath: 'assets/images/4seaters.jpg',
     value: '4_seaters'
   },
   { 
-    id: "2", 
+    id: 2, 
     name: '6 Seaters', 
     label: '6 Seaters',
     diagramPath: 'assets/images/6seaters.jpg',

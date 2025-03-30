@@ -1,12 +1,11 @@
 // En LinkGeneratorService.ts
 import { createClient } from '@supabase/supabase-js'
 import { useSupabaseUser } from '@/composables/useSupabaseUser'
-import { User } from '@supabase/supabase-js'
-import { ref, Ref, unref } from 'vue'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
+const { user } = useSupabaseUser()
 
 export interface InspectionLink {
   id: string
@@ -21,24 +20,24 @@ export interface InspectionLink {
 }
 
 export async function generateUniqueLink(inspectionData: InspectionLink): Promise<string> {
-  // Obtener usuario actualizado usando composable
-  const { user } = useSupabaseUser()
-
   if (!user.value) {
     throw new Error('User must be authenticated to generate inspection link')
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('golf_inspections')
     .insert([{
-      ...inspectionData,
-      created_by: user.value.id
+      id: inspectionData.id,
+      guest_name: inspectionData.guest_name,
+      guest_email: inspectionData.guest_email,
+      property_id: inspectionData.property_name,
+      cart_type: inspectionData.cart_number,
+      cart_number: inspectionData.cart_number,
+      annotatedDiagramImage: inspectionData.annotatedDiagramImage,
+      initial_user_id: user.value.id, // Ahora sabemos que user.value existe
+      status: 'pending'
     }])
-    .select()
 
-  if (error) {
-    throw new Error(`Error generando enlace de inspección: ${error.message}`)
-  }
-
-  return data?.[0]?.id || ''
+  if (error) throw error
+  return inspectionData.id
 }

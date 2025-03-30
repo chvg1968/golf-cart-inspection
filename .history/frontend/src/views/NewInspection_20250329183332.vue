@@ -169,12 +169,6 @@
         <!-- PDF Download Button (Single Button) -->
         <div class="col-12 text-center pdf-buttons" >
           <q-btn 
-            label="Download PDF" 
-            color="primary" 
-            @click="downloadPDF"
-            :disable="!canDownloadPDF"
-          />
-          <q-btn 
             label="Submit Inspection Form" 
             color="primary" 
             type="submit"
@@ -187,58 +181,67 @@
 </template>
 
 <script setup lang="ts">
-import { 
-  ref, 
-  computed, 
-  reactive,
-  watch
-} from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useQuasar } from 'quasar'
-import { v4 as uuidv4 } from 'uuid'
+import SignatureCanvas from '@/components/SignatureCanvas.vue'
+import CartDiagramAnnotations from '@/components/CartDiagramAnnotations.vue'
+import PDFGenerator from '@/components/PDFGenerator.vue'
+import { sendInspectionLink } from '@/services/EmailService'
 import { createClient } from '@supabase/supabase-js'
-import { useSupabaseUser } from '@/composables/useSupabaseUser'
-
-import {
-  Properties, 
-  CartTypeOption, 
-  GuestInfo
-} from '@/types/new-inspection-types'
 
 import { 
   PROPERTIES, 
   GOLF_CART_TYPES 
 } from '@/constants'
+import { 
+  Properties, 
+  GuestInfo, 
+  CartTypeOption,
+  EmailData
+} from '@/types/base-types'
 
 import { fourSeaterImage, sixSeaterImage } from '@/assets/images'
-
-import SignatureCanvas from '@/components/SignatureCanvas.vue'
-import CartDiagramAnnotations from '@/components/CartDiagramAnnotations.vue'
-import PDFGenerator from '@/components/PDFGenerator.vue'
-import { sendInspectionLink } from '@/services/EmailService'
 
 // Configuración de Quasar
 const quasar = useQuasar()
 
-// Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-const supabase = createClient(supabaseUrl, supabaseKey)
-
-// Obtener usuario de Supabase
-const { user: supabaseUser } = useSupabaseUser()
-
 // Utilidad centralizada para resolución de imágenes
 const ImageResolver = {
-  resolveImagePath(cartType: CartTypeOption): string {
-    return cartType.label.includes('6') ? sixSeaterImage : fourSeaterImage
+  /**
+   * Resolver ruta de imagen de manera simple
+   * @param {any} cartType - Objeto de tipo de carrito
+   * @returns {string} Ruta de imagen resuelta
+   */
+  resolveImagePath(cartType: any): string {
+    // Si el tipo de carrito tiene una ruta de diagrama, usarla
+    if (cartType?.diagramPath) {
+      return cartType.diagramPath
+    }
+
+    // Determinar imagen por defecto basada en la etiqueta
+    const label = cartType?.label || ''
+    return label.includes('6') ? sixSeaterImage : fourSeaterImage
+  },
+
+  /**
+   * Determinar tipo de imagen basado en label
+   * @param {any} cartType - Objeto de tipo de carrito
+   * @returns {'fourSeater' | 'sixSeater'} Tipo de imagen
+   */
+  determineImageType(cartType: any): 'fourSeater' | 'sixSeater' {
+    const label = cartType?.label || ''
+    return label.includes('6') ? 'sixSeater' : 'fourSeater'
   }
 }
+
+// Propiedad seleccionada con tipado explícito
+const selectedProperty = ref<Properties | null>(null)
 
 // Convertir PROPERTIES a un formato adecuado para el selector
 const propertyOptions = ref<Properties[]>(PROPERTIES.map(prop => ({
   ...prop,
   label: prop.name,
-  value: prop.id.toString(), // Convertir id a string para evitar problemas de tipo
+  value: prop.id,
   diagramPath: prop.diagramType === '6seaters' ? sixSeaterImage : fourSeaterImage
 })))
 
@@ -253,40 +256,35 @@ const defaultCartType: CartTypeOption = {
   id: 'default',
   name: 'Default Cart',
   label: 'Default Cart',
-  value: 'default',
   diagramPath: fourSeaterImage,
+  value: 'default'
 }
 
-// Declaraciones de referencias con tipos explícitos
-const selectedProperty = ref<Properties | null>(null)
-const selectedCartType = ref<CartTypeOption>(defaultCartType)
-const guestInfo = ref<GuestInfo>({
+// Usar la interfaz definida para el ref con un valor inicial
+const selectedCartType = ref<CartTypeOption>({
+  id: defaultCartType.id,
+  name: defaultCartType.name,
+  label: defaultCartType.label,
+  diagramPath: defaultCartType.diagramPath,
+  value: defaultCartType.value
+})
+
+const guestInfo = reactive<GuestInfo>({
   name: '',
   email: '',
   phone: '',
-  date: ''
+  date: new Date().toISOString().split('T')[0]  // Default to current date
 })
-const annotatedDiagramImage = ref<string>('')
-const diagramMarkings = ref<Record<string, string>>({})
+
 const guestObservations = ref<string>('')
 const signature = ref<string | null>(null)
 const termsAccepted = ref<boolean>(false)
+
 const cartNumber = ref<string>('')
 
-// Referencia al componente PDFGenerator
-const pdfGeneratorRef = ref<InstanceType<typeof PDFGenerator> | null>(null)
-
-// Referencia al contenedor del formulario
-const formContainerRef = ref<HTMLElement>(document.createElement('div'))
-
-// Definir estado de la inspección
-interface NewInspectionState {
-  isPDFGenerated: boolean
-}
-
-const state = reactive<NewInspectionState>({
-  isPDFGenerated: false
-})
+// Declaración de referencias
+const annotatedDiagramImage = ref<string | null>(null)
+const diagramMarkings = ref<Record<string, string>>({})
 
 // Método para guardar marcas de diagrama
 const saveDiagramMarking = (diagramPath: string, marking: string) => {
@@ -299,7 +297,7 @@ const saveDiagramMarking = (diagramPath: string, marking: string) => {
 
 // Método para obtener marcas de diagrama previas
 const getPreviousDiagramMarking = (diagramPath: string) => {
-  return diagramMarkings.value[diagramPath] || ''
+  return diagramMarkings.value[diagramPath] || null
 }
 
 // Observador para actualizar Cart Number, Cart Type y Diagrama cuando se selecciona una propiedad
@@ -307,7 +305,7 @@ watch(selectedProperty, (newProperty) => {
   if (newProperty) {
     // Restablecer marcas al cambiar de propiedad
     diagramMarkings.value = {}
-    annotatedDiagramImage.value = ''
+    annotatedDiagramImage.value = null
     
     const selectedProp = propertyOptions.value.find(prop => prop.id === newProperty.id)
     if (selectedProp) {
@@ -324,23 +322,32 @@ watch(selectedProperty, (newProperty) => {
         // Seleccionar ruta de imagen basada en el tipo de carrito
         const diagramPath = ImageResolver.resolveImagePath(cartTypeMatch)
         
-        selectedCartType.value = {
-          id: cartTypeMatch.id,
-          name: cartTypeMatch.name,
-          label: cartTypeMatch.label,
-          value: cartTypeMatch.value,
-          diagramPath: diagramPath
+        selectedCartType.value = { 
+          id: cartTypeMatch.id || 'default', 
+          name: cartTypeMatch.name || 'Default Cart', 
+          label: cartTypeMatch.label, 
+          diagramPath: diagramPath, 
+          value: cartTypeMatch.value 
         }
+
+        // Obtener marcas previas para este diagrama
+        const previousMarking = getPreviousDiagramMarking(diagramPath)
+        annotatedDiagramImage.value = previousMarking
       } else {
         selectedCartType.value = defaultCartType
       }
       
-      // Obtener marcas previas para este diagrama
-      const previousMarking = getPreviousDiagramMarking(selectedCartType.value.diagramPath)
-      annotatedDiagramImage.value = previousMarking || ''
-    } else {
-      selectedCartType.value = defaultCartType
+      // Depuración: Imprimir información para verificar la selección
+      console.log('Selected Property:', selectedProp)
+      console.log('Cart Number:', cartNumber.value)
+      console.log('Selected Cart Type:', selectedCartType.value)
     }
+  } else {
+    // Resetear valores si no hay propiedad seleccionada
+    cartNumber.value = ''
+    selectedCartType.value = defaultCartType
+    diagramMarkings.value = {}
+    annotatedDiagramImage.value = null
   }
 }, { immediate: true })
 
@@ -350,16 +357,16 @@ const onCartTypeSelect = (value: any | null) => {
     const diagramPath = value.diagramPath || '/default-diagram.svg'
     
     selectedCartType.value = {
-      id: value.id,
-      name: value.name,
+      id: value.id || 'default',
+      name: value.name || 'Default Cart',
       label: value.label,
-      value: value.value,
-      diagramPath: diagramPath
+      diagramPath: diagramPath,
+      value: value.value
     }
 
     // Obtener marcas previas para este diagrama
     const previousMarking = getPreviousDiagramMarking(diagramPath)
-    annotatedDiagramImage.value = previousMarking || ''
+    annotatedDiagramImage.value = previousMarking
   } else {
     selectedCartType.value = defaultCartType
   }
@@ -383,177 +390,157 @@ const cartTypeForDiagram = computed(() => {
 })
 
 // Validación de formulario
-const isFormValid = computed(() => {
-  return guestInfo.value.name &&
-         guestInfo.value.email &&
-         selectedProperty.value?.id &&
-         selectedCartType.value?.value &&
-         annotatedDiagramImage.value
-})
-
-// Método para validar si se puede descargar el PDF
-const canDownloadPDF = computed(() => {
-  const isGuestInfoComplete = !!(
-    guestInfo.value.name && 
-    guestInfo.value.email && 
-    guestInfo.value.phone
-  )
-  
-  const isPropertySelected = !!selectedProperty.value?.id
-  const isCartTypeSelected = !!selectedCartType.value?.value
-  const hasDiagramMarking = !!annotatedDiagramImage.value
-
-  return isGuestInfoComplete && 
-         isPropertySelected && 
-         isCartTypeSelected && 
-         hasDiagramMarking
-})
-
-// Método para manejar generación de PDF
-const handlePDFGeneration = async (pdfBlob: Blob) => {
-  try {
-    // Lógica de generación de PDF
-    await onPDFGenerated(pdfBlob)
-    state.isPDFGenerated = true
-  } catch (error) {
+const validateForm = () => {
+  if (!selectedProperty.value) {
     quasar.notify({
       type: 'negative',
-      message: 'Error al generar PDF',
+      message: 'Please select a property',
       position: 'top'
     })
+    return false
   }
-}
-
-// Método para descargar PDF
-const downloadPDF = async () => {
-  if (!canDownloadPDF.value) {
-    const missingFields: string[] = []
-    
-    if (!guestInfo.value.name) missingFields.push('Nombre')
-    if (!guestInfo.value.email) missingFields.push('Email')
-    if (!guestInfo.value.phone) missingFields.push('Teléfono')
-    if (!selectedProperty.value?.id) missingFields.push('Propiedad')
-    if (!selectedCartType.value?.value) missingFields.push('Tipo de Carrito')
-    if (!annotatedDiagramImage.value) missingFields.push('Marcas en Diagrama')
-
+  
+  if (!selectedCartType.value) {
     quasar.notify({
       type: 'negative',
-      message: `Por favor complete los siguientes campos: ${missingFields.join(', ')}`,
+      message: 'Please select a cart type',
+      position: 'top'
+    })
+    return false
+  }
+
+  if (!guestInfo.name?.trim()) {
+    quasar.notify({
+      type: 'negative',
+      message: 'Please enter the guest name',
+      position: 'top'
+    })
+    return false
+  }
+
+  if (!guestInfo.email?.includes('@')) {
+    quasar.notify({
+      type: 'negative',
+      message: 'Please enter a valid email address',
+      position: 'top'
+    })
+    return false
+  }
+
+  if (!guestInfo.phone || guestInfo.phone.length < 10) {
+    quasar.notify({
+      type: 'negative',
+      message: 'Please enter a valid phone number',
+      position: 'top'
+    })
+    return false
+  }
+
+  if (Object.keys(diagramMarkings.value).length === 0) {
+    quasar.notify({
+      type: 'negative',
+      message: 'Please make markings on the diagram',
+      position: 'top'
+    })
+    return false
+  }
+
+  return true
+}
+
+// Computed para habilitar/deshabilitar botón de PDF
+const canDownloadPDF = computed(() => {
+  const isValid = validateForm()
+  console.log('Puede descargar PDF:', isValid)
+  return isValid
+})
+
+// Referencia al contenedor del formulario
+const formContainerRef = ref<HTMLElement>(document.createElement('div'))
+
+// Referencia al componente PDFGenerator
+const pdfGeneratorRef = ref(null)
+
+// Supabase configuration
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+// Método para enviar formulario y PDF por correo
+async function submitInspectionForm() {
+  // Validar formulario
+  const formValid = validateForm()
+  if (!formValid) {
+    quasar.notify({
+      type: 'negative',
+      message: 'Por favor, complete todos los campos requeridos',
       position: 'top'
     })
     return
   }
 
   try {
-    // Llamar al método de generación de PDF en el componente PDFGenerator
-    if (pdfGeneratorRef.value) {
-      const pdfBlob = await pdfGeneratorRef.value.generatePDF()
-      await handlePDFGeneration(pdfBlob)
+    // Preparar datos para enviar enlace
+    const inspectionData = {
+      guest_name: guestInfo.name,
+      guest_email: guestInfo.email,
+      property_name: selectedProperty.value?.name,
+      cart_number: cartNumber.value
     }
-  } catch (error) {
-    console.error('Error generando PDF:', error)
-    quasar.notify({
-      type: 'negative',
-      message: 'Error al generar PDF. Por favor, inténtelo de nuevo.',
-      position: 'top'
-    })
-  }
-}
 
-// Método para manejar PDF generado
-const onPDFGenerated = async (pdfBlob: Blob) => {
-  try {
-    // Crear un enlace de descarga
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(pdfBlob)
-    link.download = `golf-cart-inspection-${guestInfo.value.name}.pdf`
-    link.click()
-    
-    // Limpiar el objeto URL
-    URL.revokeObjectURL(link.href)
+    // Enviar enlace de inspección por correo
+    await sendInspectionLink(inspectionData)
 
     // Notificar éxito
     quasar.notify({
       type: 'positive',
-      message: 'PDF generado y descargado exitosamente',
+      message: 'Enlace de inspección enviado exitosamente al correo del invitado',
       position: 'top'
     })
+
+    // Opcional: Guardar datos iniciales en Supabase
+    const { error } = await supabase.from('initial_inspections').insert([{
+      ...inspectionData,
+      status: 'link_sent',
+      diagram_markings: JSON.stringify(diagramMarkings.value),
+      annotated_diagram: annotatedDiagramImage.value
+    }])
+
+    if (error) {
+      console.error('Error guardando datos iniciales:', error)
+      quasar.notify({
+        type: 'warning',
+        message: 'No se pudieron guardar los datos iniciales',
+        position: 'top'
+      })
+    }
+
   } catch (error) {
-    console.error('Error en descarga de PDF:', error)
+    console.error('Error enviando enlace de inspección:', error)
     quasar.notify({
       type: 'negative',
-      message: 'Error al descargar PDF',
+      message: 'Error enviando enlace de inspección',
       position: 'top'
     })
   }
 }
 
-// Método de error de PDF
-const onPDFError = (error: Error) => {
+// Método cuando se genera el PDF
+function onPDFGenerated() {
   quasar.notify({
-    type: 'negative',
-    message: `Error en PDF: ${error.message}`,
+    type: 'positive',
+    message: 'PDF generado exitosamente',
     position: 'top'
   })
 }
 
-async function submitInspectionForm() {
-  try {
-    // Validaciones
-    if (!isFormValid.value) {
-      quasar.notify({
-        type: 'negative',
-        message: 'Please complete all required fields',
-        position: 'top'
-      })
-      return
-    }
-
-    // Generar datos de inspección
-    const inspectionData = {
-      id: uuidv4(),
-      guest_name: guestInfo.value.name,
-      guest_email: guestInfo.value.email,
-      property_name: selectedProperty.value?.name || '',
-      cart_number: cartNumber.value,
-      annotatedDiagramImage: annotatedDiagramImage.value,
-      initial_data: JSON.stringify({
-        guestInfo: guestInfo.value,
-        property: selectedProperty.value,
-        cartType: selectedCartType.value
-      }),
-      created_at: new Date(),
-      status: 'pending'
-    }
-
-    // Enviar enlace de inspección
-    await sendInspectionLink(inspectionData)
-
-    // Guardar en Supabase
-    const { error } = await supabase.from('golf_inspections').insert([{
-      ...inspectionData,
-      initial_user_id: supabaseUser.value?.id,
-      status: 'link_sent'
-    }])
-
-    if (error) {
-      console.error('Error saving initial data:', error)
-      throw new Error(error.message)
-    }
-
-    quasar.notify({
-      type: 'positive',
-      message: 'Inspection link sent successfully',
-      position: 'top'
-    })
-  } catch (error: unknown) {
-    console.error('Error submitting inspection:', error)
-    quasar.notify({
-      type: 'negative',
-      message: error instanceof Error ? error.message : 'Failed to submit inspection',
-      position: 'top'
-    })
-  }
+// Método cuando hay un error en la generación del PDF
+function onPDFError(error: Error) {
+  quasar.notify({
+    type: 'negative',
+    message: 'Error al generar PDF: ' + error.message,
+    position: 'top'
+  })
 }
 </script>
 

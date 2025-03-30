@@ -1,5 +1,7 @@
 // Tipos base para la aplicación de inspección de carrito de golf
 
+import { User } from '@supabase/supabase-js'
+
 export interface Point {
   x: number
   y: number

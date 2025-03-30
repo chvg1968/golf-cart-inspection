@@ -42,8 +42,16 @@
     (e: 'pdf-error', error: Error): void
   }>()
 
+  // Método para detectar plataforma
+  const detectPlatform = (): 'ios' | 'android' | 'desktop' => {
+    const userAgent = navigator.userAgent.toLowerCase()
+    if (/iphone|ipad|ipod/.test(userAgent)) return 'ios'
+    if (/android/.test(userAgent)) return 'android'
+    return 'desktop'
+  }
+
   // Método para generar PDF con datos opcionales
-  async function generatePDF(data?: PDFData) {
+  async function generatePDF(data?: PDFData): Promise<Blob> {
     try {
       const form = document.querySelector('.form-container') as HTMLElement
       
@@ -51,120 +59,8 @@
         throw new Error('Formulario no encontrado')
       }
 
-      // Clonar formulario
-      const clonedForm = form.cloneNode(true) as HTMLElement
-      
-      // Añadir estilos de fuente al clon
-      const styleElement = document.createElement('style')
-      styleElement.textContent = `
-        body, html, * {
-          font-family: Arial, sans-serif !important;
-          line-height: 1.5 !important;
-          color: #333 !important;
-        }
-        .text-h6, .page-title {
-          font-size: 24px !important;
-          font-weight: bold !important;
-          text-transform: uppercase !important;
-        }
-        input, select, textarea, div, span, 
-        .q-table, .q-table__container, 
-        .q-table__top, .q-table__bottom, 
-        .q-table thead, .q-table tbody, 
-        .q-table tr, .q-table th, .q-table td {
-          font-size: 24px !important;
-          font-weight: bold !important;
-        }
-        label {
-          font-size: 16px !important;
-          font-weight: normal !important;
-        }
-        .q-checkbox__label {
-          font-size: 16px !important;
-          font-weight: normal !important;
-        }
-      `
-      clonedForm.appendChild(styleElement)
-      
-      // Elementos a ocultar
-      const elementsToHide = [
-        '.damage-record-form', 
-        '.pdf-buttons',
-        '.q-table__bottom',
-        '.q-field__append', // Ocultar iconos de dropdown
-        '.q-icon' // Ocultar todos los iconos de Quasar
-      ]
-
-      // Ocultar elementos específicos
-      elementsToHide.forEach(selector => {
-        const elements = clonedForm.querySelectorAll(selector)
-        elements.forEach(element => {
-          if (element instanceof HTMLElement) {
-            element.style.display = 'none'
-            element.style.visibility = 'hidden'
-            element.style.position = 'absolute'
-            element.style.opacity = '0'
-            element.style.height = '0'
-            element.style.width = '0'
-          }
-        })
-      })
-
-      // Función para esperar la carga de imagen
-      const waitForImageLoad = (imgElement: HTMLImageElement): Promise<void> => {
-        return new Promise((resolve, reject) => {
-          if (imgElement.complete) {
-            resolve()
-          } else {
-            imgElement.onload = () => resolve()
-            imgElement.onerror = () => reject(new Error('Error cargando imagen'))
-          }
-        })
-      }
-
-      // Reemplazar diagrama con imagen anotada si está disponible
-      const diagramContainer = clonedForm.querySelector('.diagram-container')
-      let annotatedImageLoaded = false
-      
-      // Verificar si hay imagen anotada en props o en data
-      const annotatedImage = props.annotatedDiagramImage || 
-                             (data && (data.annotatedDiagramImage || data.cartDiagramDrawing))
-
-      console.log('Imagen anotada:', {
-        propsImage: props.annotatedDiagramImage,
-        dataImage: data?.annotatedDiagramImage,
-        dataDrawing: data?.cartDiagramDrawing
-      })
-
-      if (diagramContainer && annotatedImage) {
-        const imgElement = document.createElement('img')
-        imgElement.src = annotatedImage
-        imgElement.style.maxWidth = '100%'
-        imgElement.style.height = 'auto'
-        diagramContainer.innerHTML = ''
-        diagramContainer.appendChild(imgElement)
-
-        try {
-          await waitForImageLoad(imgElement)
-          annotatedImageLoaded = true
-          console.log('Imagen anotada cargada correctamente')
-        } catch (error) {
-          console.error('Error cargando imagen anotada:', error)
-        }
-      } else {
-        console.warn('No se encontró imagen anotada')
-      }
-
-      // Contenedor temporal para renderizado
-      const tempDiv = document.createElement('div')
-      tempDiv.style.position = 'absolute'
-      tempDiv.style.left = '-9999px'
-      tempDiv.style.width = '210mm'
-      tempDiv.style.minHeight = '297mm'
-      tempDiv.style.padding = '10mm'
-      tempDiv.style.boxSizing = 'border-box'
-      tempDiv.appendChild(clonedForm)
-      document.body.appendChild(tempDiv)
+      // Clonar formulario y preparar para PDF
+      const clonedForm = prepareFormForPDF(form)
 
       // Añadir un pequeño retraso para asegurar renderizado
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -179,7 +75,7 @@
       })
 
       // Remover contenedor temporal
-      document.body.removeChild(tempDiv)
+      document.body.removeChild(clonedForm.parentElement!)
 
       // Crear PDF
       const pdf = new jsPDF('p', 'mm', 'letter')
@@ -199,120 +95,118 @@
         imgWidth = imgHeight * imgRatio
       }
 
-      // Calcular posición centrada
-      const xPosition = (pageWidth - imgWidth) / 2
-      const yPosition = (pageHeight - imgHeight) / 2
-
-      // Agregar imagen centrada con compresión JPEG
+      // Agregar imagen al PDF
       pdf.addImage(
-        canvas.toDataURL('image/jpeg', 0.5),  // Reducir calidad de imagen
+        canvas.toDataURL('image/jpeg', 0.8), 
         'JPEG', 
-        xPosition, 
-        yPosition, 
-        imgWidth, 
-        imgHeight
+        10, 10, 
+        imgWidth, imgHeight
       )
-      
-      // Generar Blob para descarga
-      const pdfBlob = pdf.output('blob')
-      const pdfUrl = URL.createObjectURL(pdfBlob)
 
-      // Detección de dispositivos móviles
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-
-      // Generar nombre de archivo descriptivo
-      const sanitizeFileName = (input: string) => 
-        input.replace(/[^a-z0-9]/gi, '_').toLowerCase()
-
-      const fileName = data 
-        ? `Inspection/${sanitizeFileName(data.cartNumber || 'unknown')}/${sanitizeFileName(data.selectedProperty?.name || 'unknown')}/${sanitizeFileName(data.guestInfo?.name || 'unknown')}.pdf`
-        : 'golf_cart_inspection.pdf'
-
-      if (isMobile) {
-        // Estrategia para dispositivos móviles
-        const link = document.createElement('a')
-        link.href = pdfUrl
-        link.target = '_blank'
-        link.rel = 'noopener noreferrer'
-        
-        // Intentar diferentes métodos de descarga
-        try {
-          // Método 1: Abrir en nueva pestaña
-          window.open(pdfUrl, '_blank')
-          
-          // Método 2: Intentar descarga directa
-          link.download = fileName
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-        } catch (error) {
-          console.warn('Error en descarga móvil:', error)
-          // Notificación de problema de descarga
-          $q.notify({
-            type: 'warning',
-            message: 'No se pudo descargar automáticamente. Por favor, intenta descargar manualmente.',
-            position: 'top'
-          })
-        }
-      } else {
-        // Método de descarga para escritorio
-        const link = document.createElement('a')
-        link.href = pdfUrl
-        link.download = fileName
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-
-      // Liberar recursos
-      URL.revokeObjectURL(pdfUrl)
+      // Generar Blob del PDF
+      const pdfBlob = new Blob([pdf.output('blob')], { type: 'application/pdf' })
 
       // Emitir evento de PDF generado
       emit('pdf-generated')
+
+      return pdfBlob
     } catch (error) {
       console.error('Error generando PDF:', error)
-      emit('pdf-error', error instanceof Error ? error : new Error('Error desconocido'))
+      emit('pdf-error', error as Error)
+      throw error
     }
   }
 
-  // Método para descargar PDF
-  const downloadPDF = async (pdfData: any) => {
-    try {
-      // Validar datos de entrada
-      if (!pdfData) {
-        throw new Error('Datos de PDF no proporcionados')
+  // Método para preparar formulario para PDF
+  function prepareFormForPDF(form: HTMLElement): HTMLElement {
+    // Clonar formulario
+    const clonedForm = form.cloneNode(true) as HTMLElement
+    
+    // Añadir estilos de fuente al clon
+    const styleElement = document.createElement('style')
+    styleElement.textContent = `
+      body, html, * {
+        font-family: Arial, sans-serif !important;
+        line-height: 1.5 !important;
+        color: #333 !important;
       }
+      .text-h6, .page-title {
+        font-size: 24px !important;
+        font-weight: bold !important;
+        text-transform: uppercase !important;
+      }
+      input, select, textarea, div, span, 
+      .q-table, .q-table__container, 
+      .q-table__top, .q-table__bottom, 
+      .q-table thead, .q-table tbody, 
+      .q-table tr, .q-table th, .q-table td {
+        font-size: 24px !important;
+        font-weight: bold !important;
+      }
+      label {
+        font-size: 16px !important;
+        font-weight: normal !important;
+      }
+      .q-checkbox__label {
+        font-size: 16px !important;
+        font-weight: normal !important;
+      }
+    `
+    clonedForm.appendChild(styleElement)
+    
+    // Elementos a ocultar
+    const elementsToHide = [
+      '.damage-record-form', 
+      '.pdf-buttons',
+      '.q-table__bottom',
+      '.q-field__append', // Ocultar iconos de dropdown
+      '.q-icon' // Ocultar todos los iconos de Quasar
+    ]
 
-      // Validar campos requeridos
-      const requiredFields = [
-        'guestInfo', 
-        'selectedProperty', 
-        'selectedCartType', 
-        'cartNumber'
-      ]
-      
-      for (const field of requiredFields) {
-        if (!pdfData[field]) {
-          throw new Error(`Campo requerido faltante: ${field}`)
+    // Ocultar elementos específicos
+    elementsToHide.forEach(selector => {
+      const elements = clonedForm.querySelectorAll(selector)
+      elements.forEach(element => {
+        if (element instanceof HTMLElement) {
+          element.style.display = 'none'
+          element.style.visibility = 'hidden'
+          element.style.position = 'absolute'
+          element.style.opacity = '0'
+          element.style.height = '0'
+          element.style.width = '0'
         }
-      }
-
-      // Generar PDF
-      await generatePDF(pdfData)
-    } catch (error) {
-      console.error('Error al generar PDF:', error)
-      $q.notify({
-        type: 'negative',
-        message: 'No se pudo generar el PDF',
-        caption: error instanceof Error ? error.message : 'Error desconocido',
-        position: 'top'
       })
+    })
+
+    // Reemplazar diagrama con imagen anotada si está disponible
+    const diagramContainer = clonedForm.querySelector('.diagram-container')
+    const annotatedImage = props.annotatedDiagramImage
+
+    if (diagramContainer && annotatedImage) {
+      const imgElement = document.createElement('img')
+      imgElement.src = annotatedImage
+      imgElement.style.maxWidth = '100%'
+      imgElement.style.height = 'auto'
+      diagramContainer.innerHTML = ''
+      diagramContainer.appendChild(imgElement)
     }
+
+    // Contenedor temporal para renderizado
+    const tempDiv = document.createElement('div')
+    tempDiv.style.position = 'absolute'
+    tempDiv.style.left = '-9999px'
+    tempDiv.style.width = '210mm'
+    tempDiv.style.minHeight = '297mm'
+    tempDiv.style.padding = '10mm'
+    tempDiv.style.boxSizing = 'border-box'
+    tempDiv.appendChild(clonedForm)
+    document.body.appendChild(tempDiv)
+
+    return clonedForm
   }
 
-  // Exponer método para ser llamado desde el padre
-  defineExpose({ 
-    downloadPDF,
-    generatePDF  // Mantener generatePDF por compatibilidad
+  // Exponer métodos para uso externo
+  defineExpose({
+    generatePDF
   })
   </script>

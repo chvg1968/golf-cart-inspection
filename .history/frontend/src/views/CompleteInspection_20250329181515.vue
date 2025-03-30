@@ -58,30 +58,3 @@ async function submitForm() {
   }
 }
 </script>
-
-// Agregar estilos
-<style scoped>
-.complete-inspection-container {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.completion-message {
-  text-align: center;
-  padding: 40px;
-}
-
-.error-message {
-  color: red;
-  text-align: center;
-  padding: 20px;
-}
-
-.diagram-image {
-  max-width: 100%;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 5px;
-}
-</style>
